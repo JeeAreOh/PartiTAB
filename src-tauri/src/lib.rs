@@ -105,6 +105,17 @@ async fn load_soundfont(app: AppHandle, path: String) -> Result<Status, String> 
     Ok(get_status(state))
 }
 
+/// Lê um arquivo local (partitura ou SoundFont) para a interface. Devolve os
+/// bytes crus, sem passar por JSON.
+#[tauri::command]
+async fn read_file(path: String) -> Result<tauri::ipc::Response, String> {
+    tauri::async_runtime::spawn_blocking(move || std::fs::read(&path))
+        .await
+        .map_err(|e| e.to_string())?
+        .map(tauri::ipc::Response::new)
+        .map_err(|e| format!("Não foi possível ler o arquivo: {e}"))
+}
+
 /// Notas tocadas com o mouse no teclado virtual.
 #[tauri::command]
 fn play_note(state: State<AppState>, key: u8, velocity: u8) -> Result<(), String> {
@@ -135,6 +146,7 @@ pub fn run() {
             disconnect_midi,
             load_soundfont,
             play_note,
+            read_file,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

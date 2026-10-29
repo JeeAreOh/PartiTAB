@@ -11,6 +11,8 @@
   --key-white: #fdfdfb;
   --key-black: #1b1b1d;
   --key-down: 47 111 219;
+  --key-score: 222 140 20;
+  --paper: #fffefb;
 
   font-family: "Segoe UI", Inter, system-ui, sans-serif;
   font-size: 15px;
@@ -33,6 +35,8 @@
     --key-white: #e9e8e4;
     --key-black: #0c0c0e;
     --key-down: 110 160 255;
+    --key-score: 240 166 64;
+    --paper: #f3f1ec;
   }
 }
 
@@ -49,15 +53,98 @@ body {
 main {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  min-height: 100vh;
-  padding: 20px 24px;
+  gap: 12px;
+  height: 100vh;
+  padding: 16px 24px;
 }
 
 header {
   display: flex;
-  align-items: baseline;
-  gap: 12px;
+  align-items: center;
+  gap: 16px;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+
+.toolbar select {
+  flex: 0 1 180px;
+  min-width: 0;
+}
+
+.time {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  min-width: 80px;
+}
+
+.speed,
+.check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+}
+
+.speed span {
+  font-variant-numeric: tabular-nums;
+  min-width: 3.5em;
+}
+
+.settings-toggle {
+  flex-shrink: 0;
+  align-self: flex-start;
+}
+
+.speed input {
+  width: 110px;
+}
+
+.settings-toggle.on {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.score {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background: var(--paper);
+  color: #1d1b18;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  color: #6d675f;
+}
+
+/* Cursores do alphaTab */
+.at-cursor-bar {
+  background: rgb(var(--key-down) / 0.12);
+}
+
+.at-cursor-beat {
+  background: rgb(var(--key-down) / 0.75);
+  width: 3px;
+}
+
+.at-highlight * {
+  fill: rgb(var(--key-down));
+  stroke: rgb(var(--key-down));
 }
 
 h1 {
@@ -149,7 +236,6 @@ button.primary {
 }
 
 .stage {
-  margin-top: auto;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -178,7 +264,8 @@ button.primary {
 .keyboard {
   position: relative;
   display: flex;
-  height: 180px;
+  flex-shrink: 0;
+  height: 150px;
   touch-action: none;
 }
 
@@ -208,6 +295,45 @@ button.primary {
 
 .black[data-down="true"] {
   background: linear-gradient(rgb(var(--key-down) / var(--vel, 1)) 0 0), var(--key-black);
+}
+
+.white[data-score="true"]::after,
+.black[data-score="true"]::after {
+  content: "";
+  position: absolute;
+  left: 15%;
+  right: 15%;
+  bottom: 22px;
+  height: 8px;
+  border-radius: 4px;
+  background: rgb(var(--key-score));
+}
+
+.black[data-score="true"]::after {
+  bottom: 8px;
+}
+
+.legend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.legend::before {
+  content: "";
+  width: 14px;
+  height: 8px;
+  border-radius: 4px;
+}
+
+.legend.you::before {
+  background: rgb(var(--key-down));
+}
+
+.legend.score-note::before {
+  background: rgb(var(--key-score));
 }
 
 .label {

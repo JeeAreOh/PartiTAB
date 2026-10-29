@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Copiados pelo plugin do alphaTab a cada build
+public/font
+public/soundfont

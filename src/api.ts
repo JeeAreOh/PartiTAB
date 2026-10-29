@@ -29,6 +29,8 @@ export const api = {
   loadSoundfont: (path: string) => invoke<Status>("load_soundfont", { path }),
   playNote: (key: number, velocity: number) =>
     invoke<void>("play_note", { key, velocity }),
+  readFile: (path: string) =>
+    invoke<ArrayBuffer>("read_file", { path }).then((b) => new Uint8Array(b)),
   onKey: (handler: (e: KeyEvent) => void): Promise<UnlistenFn> =>
     listen<KeyEvent>("key", (e) => handler(e.payload)),
 };

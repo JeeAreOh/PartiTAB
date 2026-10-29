@@ -14,11 +14,13 @@ export const noteName = (key: number) =>
 interface Props {
   /** Teclas pressionadas → velocidade (1–127). */
   pressed: Map<number, number>;
+  /** Teclas que a partitura está tocando agora. */
+  expected?: Set<number>;
   onPress: (key: number) => void;
   onRelease: (key: number) => void;
 }
 
-export function Keyboard({ pressed, onPress, onRelease }: Props) {
+export function Keyboard({ pressed, expected, onPress, onRelease }: Props) {
   const mouseKey = useRef<number | null>(null);
   const whites: number[] = [];
   for (let k = FIRST_KEY; k <= LAST_KEY; k++) if (!isBlack(k)) whites.push(k);
@@ -40,6 +42,7 @@ export function Keyboard({ pressed, onPress, onRelease }: Props) {
     return {
       title: noteName(key),
       "data-down": velocity !== undefined,
+      "data-score": expected?.has(key) ?? false,
       style: velocity
         ? ({ "--vel": (0.35 + (0.65 * velocity) / 127).toFixed(2) } as React.CSSProperties)
         : undefined,
