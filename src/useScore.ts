@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as alphaTab from "@coderline/alphatab";
+import {
+  TempoMap,
+  buildTimeline,
+  removeHandNotes,
+  type HandChoice,
+  type Step,
+} from "./practice/timeline";
 
 export interface TrackInfo {
   index: number;
@@ -28,6 +35,9 @@ export interface ScoreState {
   duration: number;
   /** Notas (MIDI) da faixa escolhida soando agora na reprodução. */
   sounding: Set<number>;
+  /** Notas da faixa escolhida em ordem de execução, e o mapa de andamento. */
+  timeline: Step[];
+  tempo: TempoMap | null;
 }
 
 const EMPTY: ScoreState = {
@@ -38,6 +48,8 @@ const EMPTY: ScoreState = {
   position: 0,
   duration: 0,
   sounding: new Set(),
+  timeline: [],
+  tempo: null,
 };
 
 export function useScore(onError: (message: string) => void) {
@@ -45,6 +57,7 @@ export function useScore(onError: (message: string) => void) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const apiRef = useRef<alphaTab.AlphaTabApi | null>(null);
   const trackRef = useRef<number | null>(null);
+  const mutedRef = useRef<HandChoice | null>(null);
   const errorRef = useRef(onError);
   errorRef.current = onError;
   const [state, setState] = useState<ScoreState>(EMPTY);
@@ -89,6 +102,24 @@ export function useScore(onError: (message: string) => void) {
         api.renderTracks([score.tracks[track]]);
       }
     });
+    // O MIDI é gerado ao carregar a partitura e quando pedimos de novo
+    // (troca das mãos silenciadas). Antes de tocar, tiramos as notas do aluno.
+    api.midiLoad.on((midi) => {
+      const { timeline, tempo } = timelineOf(api, trackRef.current);
+      // (api.midiLoaded não é usado: no alphaTab 1.8.4 ele entra em recursão infinita.)
+      const bars = api.tickCache?.masterBars ?? [];
+      const end = bars[bars.length - 1]?.end ?? 0;
+      setState((s) => ({ ...s, timeline, tempo, duration: tempo ? tempo.ms(end) : s.duration }));
+      const track = trackRef.current !== null ? api.score?.tracks[trackRef.current] : null;
+      if (!track || !mutedRef.current) return;
+      removeHandNotes(midi.tracks, {
+        steps: timeline,
+        hands: mutedRef.current,
+        channels: new Set([track.playbackInfo.primaryChannel, track.playbackInfo.secondaryChannel]),
+        tickShift: midi.tickShift,
+        noteOnType: alphaTab.midi.MidiEventType.NoteOn,
+      });
+    });
     api.playerReady.on(() => setState((s) => ({ ...s, ready: true })));
     api.playerStateChanged.on((e) => {
       const playing = e.state === alphaTab.synth.PlayerState.Playing;
@@ -130,8 +161,17 @@ export function useScore(onError: (message: string) => void) {
     const track = api?.score?.tracks[index];
     if (!api || !track) return;
     trackRef.current = index;
-    setState((s) => ({ ...s, track: index, sounding: new Set() }));
+    setState((s) => ({ ...s, track: index, sounding: new Set(), ...timelineOf(api, index) }));
     api.renderTracks([track]);
+    if (mutedRef.current) api.loadMidiForScore();
+  }, []);
+
+  /** Silencia na reprodução as mãos que o aluno vai tocar (null = toca tudo). */
+  const setMutedHands = useCallback((hands: HandChoice | null) => {
+    if (mutedRef.current === hands) return;
+    mutedRef.current = hands;
+    const api = apiRef.current;
+    if (api?.score) api.loadMidiForScore();
   }, []);
 
   /** Toca só a faixa escolhida (true) ou todas (false). */
@@ -156,5 +196,25 @@ export function useScore(onError: (message: string) => void) {
     },
   };
 
-  return { containerRef, scrollRef, state, load, selectTrack, setSolo, loadSoundFont, ...controls };
+  return {
+    containerRef,
+    scrollRef,
+    apiRef,
+    state,
+    load,
+    selectTrack,
+    setSolo,
+    setMutedHands,
+    loadSoundFont,
+    ...controls,
+  };
+}
+
+function timelineOf(api: alphaTab.AlphaTabApi, track: number | null) {
+  const cache = api.tickCache;
+  if (!cache || track === null) return { timeline: [], tempo: null };
+  return {
+    timeline: buildTimeline(cache, track),
+    tempo: new TempoMap(cache, api.score?.tempo),
+  };
 }

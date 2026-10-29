@@ -12,6 +12,9 @@
   --key-black: #1b1b1d;
   --key-down: 47 111 219;
   --key-score: 222 140 20;
+  --flash-good: 31 160 85;
+  --flash-off: 222 160 20;
+  --flash-bad: 210 60 50;
   --paper: #fffefb;
 
   font-family: "Segoe UI", Inter, system-ui, sans-serif;
@@ -130,6 +133,89 @@ header {
   justify-content: center;
   gap: 4px;
   color: #6d675f;
+}
+
+.segmented {
+  display: inline-flex;
+}
+
+.segmented button {
+  border-radius: 0;
+  margin-left: -1px;
+}
+
+.segmented button:first-child {
+  border-radius: 6px 0 0 6px;
+  margin-left: 0;
+}
+
+.segmented button:last-child {
+  border-radius: 0 6px 6px 0;
+}
+
+.segmented button.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  position: relative;
+}
+
+.practice-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 8px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.stats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 14px;
+  margin-left: auto;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.stats b {
+  color: var(--text);
+  font-size: 1.15rem;
+}
+
+.stats .good {
+  color: rgb(var(--flash-good));
+}
+
+.stats .off {
+  color: var(--warn);
+}
+
+.stats .bad {
+  color: var(--error);
+}
+
+.feedback {
+  min-width: 9em;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.feedback.hit {
+  color: rgb(var(--flash-good));
+}
+
+.feedback.early,
+.feedback.late {
+  color: var(--warn);
+}
+
+.feedback.wrong,
+.feedback.miss {
+  color: var(--error);
 }
 
 /* Cursores do alphaTab */
@@ -295,6 +381,26 @@ button.primary {
 
 .black[data-down="true"] {
   background: linear-gradient(rgb(var(--key-down) / var(--vel, 1)) 0 0), var(--key-black);
+}
+
+.white[data-flash],
+.black[data-flash] {
+  transition: none;
+}
+
+.white[data-flash="good"],
+.black[data-flash="good"] {
+  background: rgb(var(--flash-good));
+}
+
+.white[data-flash="off"],
+.black[data-flash="off"] {
+  background: rgb(var(--flash-off));
+}
+
+.white[data-flash="bad"],
+.black[data-flash="bad"] {
+  background: rgb(var(--flash-bad));
 }
 
 .white[data-score="true"]::after,

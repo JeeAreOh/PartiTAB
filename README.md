@@ -4,7 +4,7 @@ App de prática de piano para Windows: leitor de partitura (Guitar Pro, MusicXML
 
 O plano completo está em [docs/PLANO.md](docs/PLANO.md).
 
-## Estado atual: fase 2 — leitor de partitura
+## Estado atual: fase 3 — motor de prática
 
 **Fase 1 — piano virtual**
 
@@ -21,6 +21,21 @@ O plano completo está em [docs/PLANO.md](docs/PLANO.md).
 - Reprodução com cursor acompanhando a música, andamento de 25% a 150% (duplo clique volta a 100%) e opção de tocar só a faixa escolhida.
 - O teclado virtual marca em laranja as notas que a partitura está tocando, e em azul as que você toca.
 - A reprodução usa o mesmo SoundFont escolhido para o piano. Para ouvir a banda inteira, use um SoundFont General MIDI completo (ex.: FluidR3_GM); sem SoundFont, o app usa o SONiVOX que vem com o alphaTab.
+
+**Fase 3 — motor de prática**
+
+Três modos na barra de cima:
+
+- **Ouvir** — reprodução normal.
+- **Esperar** — o cursor para em cada nota ou acorde e só avança quando você toca todas as notas certas da mão escolhida. As notas que faltam ficam marcadas em laranja no teclado virtual. A outra mão é tocada pelo próprio app, com o mesmo piano. Trechos em que só a outra mão toca seguem sozinhos no andamento escolhido.
+- **Tocar junto** — a música segue no andamento, com a banda, e a mão que você pratica sai da reprodução (as notas dela são retiradas do MIDI gerado). Cada nota é avaliada: **no tempo** (até 70 ms), **adiantada** ou **atrasada** (até 200 ms), **errada** ou **perdida**. As janelas são medidas em tempo real, então valem igual em qualquer andamento.
+
+- Mão: direita, esquerda ou ambas. Em partitura de piano com pauta dupla, a pauta de cima é a direita; com uma pauta só, a divisão é no dó central.
+- Metrônomo e contagem de um compasso antes de começar (no modo Tocar junto).
+- Retorno na hora: a tecla pisca verde (certa), amarela (fora do tempo) ou vermelha (errada); placar com pontos de 0 a 100, precisão e contagem de cada tipo.
+- Pontos: nota no tempo vale 1, fora do tempo 0,5, perdida 0; cada nota errada desconta 0,5.
+
+O motor de prática roda na interface (TypeScript), não no Rust: o som do teclado continua indo direto do MIDI ao sintetizador, e o atraso de poucos ms até a interface afeta só a correção. Ainda não há compensação da latência da saída de áudio da reprodução; se as notas aparecerem sempre "adiantadas", é isso.
 
 Arquivos MIDI (`.mid`) ainda não abrem: o alphaTab não importa MIDI. Fica para quando a separação de mãos por altura for implementada.
 
@@ -47,7 +62,11 @@ Se o teclado continuar soando junto com o PC, desligue o Local manualmente na fu
 ```
 src/
   App.tsx            interface: barra da partitura, ajustes, teclado virtual
-  useScore.ts        integração com o alphaTab (carregar, faixas, reprodução)
+  useScore.ts        integração com o alphaTab (carregar, faixas, reprodução, MIDI sem a mão do aluno)
+  practice/
+    timeline.ts      notas da faixa em ordem de execução, mãos, andamento
+    engine.ts        modo espera, avaliação de tempo, pontuação
+    usePractice.ts   liga o motor ao alphaTab, ao teclado e ao sintetizador
   Keyboard.tsx       teclado de 61 teclas
 src-tauri/src/
   midi.rs            entrada MIDI, tradução das mensagens, Local Control
@@ -56,4 +75,4 @@ src-tauri/src/
 docs/PLANO.md        plano do projeto
 ```
 
-Testes do núcleo: `cd src-tauri && cargo test`.
+Testes: `npm test` (motor de prática) e `cd src-tauri && cargo test` (MIDI).

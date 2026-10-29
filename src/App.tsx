@@ -1,8 +1,11 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { api, type Status } from "./api";
 import { Keyboard } from "./Keyboard";
 import { useScore } from "./useScore";
+import { usePractice, type Mode } from "./practice/usePractice";
+import { accuracy, score as points, type Judgement } from "./practice/engine";
+import type { HandChoice } from "./practice/timeline";
 import "./App.css";
 
 const LAST_PORT = "partitab.midiPort";
@@ -31,6 +34,35 @@ const storage = {
 
 const fileName = (path: string) => path.split(/[\\/]/).pop() ?? path;
 
+const MODES: [Mode, string, string][] = [
+  ["listen", "Ouvir", "Toca a partitura para você ouvir"],
+  ["wait", "Esperar", "A música só avança quando você toca as notas certas"],
+  ["play", "Tocar junto", "A música segue no andamento e cada nota é avaliada"],
+];
+
+const HANDS: [HandChoice, string][] = [
+  ["right", "Direita"],
+  ["left", "Esquerda"],
+  ["both", "Ambas"],
+];
+
+function describe(j: Judgement | null) {
+  if (!j) return "";
+  const ms = j.deltaMs !== undefined ? ` ${Math.abs(j.deltaMs)} ms` : "";
+  switch (j.verdict) {
+    case "hit":
+      return "Certo!";
+    case "early":
+      return `Adiantada${ms}`;
+    case "late":
+      return `Atrasada${ms}`;
+    case "wrong":
+      return "Nota errada";
+    case "miss":
+      return "Nota perdida";
+  }
+}
+
 const formatTime = (ms: number) => {
   const total = Math.floor(ms / 1000);
   return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
@@ -49,6 +81,15 @@ function App() {
   const [speed, setSpeed] = useState(100);
   const [solo, setSolo] = useState(false);
   const score = useScore(setError);
+  const practice = usePractice({
+    apiRef: score.apiRef,
+    timeline: score.state.timeline,
+    tempo: score.state.tempo,
+    speed: speed / 100,
+    setMutedHands: score.setMutedHands,
+  });
+  const onNoteRef = useRef(practice.onNote);
+  onNoteRef.current = practice.onNote;
 
   const run = useCallback(async (action: () => Promise<Status | void>) => {
     setBusy(true);
@@ -114,8 +155,10 @@ function App() {
 
   useEffect(() => {
     const unlisten = api.onKey((e) => {
-      if (e.type === "noteOn") setKey(e.key, e.velocity);
-      else if (e.type === "noteOff") setKey(e.key, null);
+      if (e.type === "noteOn") {
+        setKey(e.key, e.velocity);
+        onNoteRef.current(e.key);
+      } else if (e.type === "noteOff") setKey(e.key, null);
       else setSustain(e.down);
     });
     return () => {
@@ -187,6 +230,8 @@ function App() {
       ? ((audio.bufferFrames / audio.sampleRate) * 1000).toFixed(1)
       : null;
   const { state } = score;
+  const p = practice.state;
+  const practicing = p.mode !== "listen";
 
   return (
     <main>
@@ -210,17 +255,41 @@ function App() {
                   </option>
                 ))}
               </select>
-              <button
-                className="primary"
-                onClick={score.playPause}
-                disabled={!state.ready}
-                title={state.ready ? undefined : "Carregando o som…"}
-              >
-                {state.playing ? "Pausar" : "Tocar"}
-              </button>
-              <button onClick={score.stop} disabled={!state.ready}>
-                Parar
-              </button>
+              <div className="segmented" role="group" aria-label="Modo">
+                {MODES.map(([m, label, hint]) => (
+                  <button
+                    key={m}
+                    className={p.mode === m ? "on" : ""}
+                    title={hint}
+                    onClick={() => practice.set("mode", m)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {practicing ? (
+                <button
+                  className="primary"
+                  onClick={p.running ? practice.stop : practice.start}
+                  disabled={!state.ready || state.timeline.length === 0}
+                >
+                  {p.running ? "Parar" : "Começar"}
+                </button>
+              ) : (
+                <>
+                  <button
+                    className="primary"
+                    onClick={score.playPause}
+                    disabled={!state.ready}
+                    title={state.ready ? undefined : "Carregando o som…"}
+                  >
+                    {state.playing ? "Pausar" : "Tocar"}
+                  </button>
+                  <button onClick={score.stop} disabled={!state.ready}>
+                    Parar
+                  </button>
+                </>
+              )}
               <span className="time">
                 {formatTime(state.position)} / {formatTime(state.duration)}
               </span>
@@ -237,10 +306,12 @@ function App() {
                 />
                 <span>{speed}%</span>
               </label>
-              <label className="check">
-                <input type="checkbox" checked={solo} onChange={(e) => setSolo(e.target.checked)} />
-                Só esta faixa
-              </label>
+              {p.mode !== "wait" && (
+                <label className="check">
+                  <input type="checkbox" checked={solo} onChange={(e) => setSolo(e.target.checked)} />
+                  Só esta faixa
+                </label>
+              )}
             </>
           )}
         </div>
@@ -252,6 +323,61 @@ function App() {
           ⚙ Ajustes
         </button>
       </header>
+
+      {practicing && state.tracks.length > 0 && (
+        <section className="practice-bar">
+          <div className="segmented" role="group" aria-label="Mão">
+            {HANDS.map(([h, label]) => (
+              <button
+                key={h}
+                className={p.hands === h ? "on" : ""}
+                onClick={() => practice.set("hands", h)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {p.mode === "play" && (
+            <>
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={p.metronome}
+                  onChange={(e) => practice.set("metronome", e.target.checked)}
+                />
+                Metrônomo
+              </label>
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={p.countIn}
+                  onChange={(e) => practice.set("countIn", e.target.checked)}
+                />
+                Contagem
+              </label>
+            </>
+          )}
+          <div className="stats" aria-live="polite">
+            <span className={`feedback ${p.last?.verdict ?? ""}`}>
+              {p.finished ? "Fim da música!" : describe(p.last)}
+            </span>
+            <span title="Pontos (0–100)">
+              <b>{points(p.tally)}</b> pts
+            </span>
+            <span title="Notas certas sobre tudo que foi tocado ou deveria ter sido">
+              {accuracy(p.tally)}% precisão
+            </span>
+            <span className="good">{p.tally.hit} certas</span>
+            {p.mode === "play" && (
+              <span className="off">
+                {p.tally.early} adiantadas · {p.tally.late} atrasadas
+              </span>
+            )}
+            <span className="bad">{p.tally.wrong} erradas</span>
+            {p.mode === "play" && <span className="bad">{p.tally.miss} perdidas</span>}
+          </div>
+        </section>
+      )}
 
       {showSettings && (
         <section className="panels">
@@ -341,14 +467,18 @@ function App() {
         <div className="indicators">
           <span className={sustain ? "pill on" : "pill"}>Sustain</span>
           <span className="legend you">Você</span>
-          <span className="legend score-note">Partitura</span>
+          <span className="legend score-note">
+            {p.running && p.mode === "wait" ? "Toque agora" : "Partitura"}
+          </span>
         </div>
         <Keyboard
           pressed={pressed}
-          expected={state.sounding}
+          expected={p.running && p.mode === "wait" ? p.waiting : state.sounding}
+          flashes={p.flashes}
           onPress={(k) => {
             setKey(k, MOUSE_VELOCITY);
             api.playNote(k, MOUSE_VELOCITY);
+            practice.onNote(k);
           }}
           onRelease={(k) => {
             setKey(k, null);
