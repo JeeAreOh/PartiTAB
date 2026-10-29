@@ -7,6 +7,14 @@ import {
   type HandChoice,
   type Step,
 } from "./practice/timeline";
+import {
+  bandTracks,
+  guessRoles,
+  reduceToPiano,
+  type ReduceOptions,
+  type Roles,
+} from "./reducer/reduce";
+import { PITCH_NAMES, type Key } from "./reducer/harmony";
 
 export interface TrackInfo {
   index: number;
@@ -25,8 +33,25 @@ export function defaultTrack(tracks: TrackInfo[]): number | null {
   return (tracks.find((t) => t.isPiano) ?? tracks[0])?.index ?? null;
 }
 
+export interface Arrangement extends ReduceOptions {
+  key: Key;
+  shift: number;
+}
+
+export interface ScoreInfo {
+  title: string;
+  artist: string;
+  roles: Roles;
+}
+
+export const keyName = (k: Key) => PITCH_NAMES[k.tonic] + (k.minor ? "m" : "");
+
 export interface ScoreState {
   tracks: TrackInfo[];
+  /** Faixas originais (sem o arranjo), para escolher a melodia. */
+  sourceTracks: TrackInfo[];
+  roles: Roles;
+  arrangement: Arrangement | null;
   track: number | null;
   playing: boolean;
   ready: boolean;
@@ -42,6 +67,9 @@ export interface ScoreState {
 
 const EMPTY: ScoreState = {
   tracks: [],
+  sourceTracks: [],
+  roles: { melody: null, bass: null },
+  arrangement: null,
   track: null,
   playing: false,
   ready: false,
@@ -58,6 +86,9 @@ export function useScore(onError: (message: string) => void) {
   const apiRef = useRef<alphaTab.AlphaTabApi | null>(null);
   const trackRef = useRef<number | null>(null);
   const mutedRef = useRef<HandChoice | null>(null);
+  const bytesRef = useRef<Uint8Array | null>(null);
+  /** Transposição das outras faixas para acompanhar o arranjo transposto. */
+  const bandShiftRef = useRef(0);
   const errorRef = useRef(onError);
   errorRef.current = onError;
   const [state, setState] = useState<ScoreState>(EMPTY);
@@ -81,26 +112,14 @@ export function useScore(onError: (message: string) => void) {
     apiRef.current = api;
 
     api.scoreLoaded.on((score) => {
-      const tracks = score.tracks
-        .filter((t) => !t.isPercussion)
-        .map((t) => ({
-          index: t.index,
-          name: t.name || `Faixa ${t.index + 1}`,
-          isPiano: isPianoProgram(t.playbackInfo.program),
-        }));
-      const track = defaultTrack(tracks);
-      trackRef.current = track;
       setState((s) => ({
         ...s,
-        tracks,
-        track,
+        tracks: trackInfos(score),
+        track: trackRef.current,
         playing: false,
         position: 0,
         sounding: new Set(),
       }));
-      if (track !== null && track !== score.tracks[0]?.index) {
-        api.renderTracks([score.tracks[track]]);
-      }
     });
     // O MIDI é gerado ao carregar a partitura e quando pedimos de novo
     // (troca das mãos silenciadas). Antes de tocar, tiramos as notas do aluno.
@@ -111,6 +130,13 @@ export function useScore(onError: (message: string) => void) {
       const end = bars[bars.length - 1]?.end ?? 0;
       setState((s) => ({ ...s, timeline, tempo, duration: tempo ? tempo.ms(end) : s.duration }));
       const track = trackRef.current !== null ? api.score?.tracks[trackRef.current] : null;
+      // O alphaTab reaplica as transposições dele logo depois deste evento;
+      // a da banda vai na sequência.
+      const shift = bandShiftRef.current;
+      if (track && shift !== 0 && api.score) {
+        const band = bandTracks(api.score, track.index);
+        queueMicrotask(() => api.changeTrackTranspositionPitch(band, shift));
+      }
       if (!track || !mutedRef.current) return;
       removeHandNotes(midi.tracks, {
         steps: timeline,
@@ -149,11 +175,71 @@ export function useScore(onError: (message: string) => void) {
     };
   }, []);
 
-  const load = useCallback((data: Uint8Array) => {
+  /** Lê os bytes, monta o arranjo pedido (se houver) e desenha. */
+  const show = useCallback((options: ReduceOptions | null, track?: number | null) => {
     const api = apiRef.current;
-    if (!api) return;
+    const data = bytesRef.current;
+    if (!api || !data) return null;
+    const score = alphaTab.importer.ScoreLoader.loadScoreFromBytes(data, api.settings);
+    const sourceTracks = trackInfos(score);
+    const roles = guessRoles(score);
+    let arrangement: Arrangement | null = null;
+    let index = track ?? defaultTrack(sourceTracks);
+    if (options) {
+      const result = reduceToPiano(score, api.settings, options);
+      arrangement = { ...options, key: result.key, shift: result.shift };
+      index = result.track;
+    }
+    if (index === null || !score.tracks[index] || score.tracks[index].isPercussion) {
+      index = defaultTrack(sourceTracks);
+    }
+    trackRef.current = index;
+    bandShiftRef.current = arrangement?.shift ?? 0;
+    setState((s) => ({ ...s, sourceTracks, roles, arrangement, track: index }));
     api.stop();
-    if (!api.load(data)) errorRef.current("Formato de arquivo não reconhecido");
+    api.renderScore(score, index !== null ? [index] : undefined);
+    return { title: score.title.trim(), artist: score.artist.trim(), roles };
+  }, []);
+
+  /** Abre uma partitura. Devolve título, artista e papéis das faixas, ou null se inválida. */
+  const load = useCallback(
+    (
+      data: Uint8Array,
+      options: ReduceOptions | null = null,
+      track?: number | null,
+    ): ScoreInfo | null => {
+      const previous = bytesRef.current;
+      bytesRef.current = data;
+      try {
+        return show(options, track);
+      } catch (e) {
+        bytesRef.current = previous;
+        errorRef.current(
+          `Não foi possível abrir a partitura: ${e instanceof Error ? e.message : e}`,
+        );
+        return null;
+      }
+    },
+    [show],
+  );
+
+  /** Troca o arranjo da partitura aberta (null = original). */
+  const arrange = useCallback(
+    (options: ReduceOptions | null, track?: number | null) => {
+      try {
+        show(options, track);
+      } catch (e) {
+        errorRef.current(`Não foi possível gerar o arranjo: ${e instanceof Error ? e.message : e}`);
+      }
+    },
+    [show],
+  );
+
+  /** Partitura atual (com o arranjo) em Guitar Pro 7, para salvar ou editar no MuseScore. */
+  const exportGp = useCallback((): Uint8Array | null => {
+    const api = apiRef.current;
+    if (!api?.score) return null;
+    return new alphaTab.exporter.Gp7Exporter().export(api.score, api.settings);
   }, []);
 
   const selectTrack = useCallback((index: number) => {
@@ -202,12 +288,24 @@ export function useScore(onError: (message: string) => void) {
     apiRef,
     state,
     load,
+    arrange,
+    exportGp,
     selectTrack,
     setSolo,
     setMutedHands,
     loadSoundFont,
     ...controls,
   };
+}
+
+function trackInfos(score: alphaTab.model.Score): TrackInfo[] {
+  return score.tracks
+    .filter((t) => !t.isPercussion)
+    .map((t) => ({
+      index: t.index,
+      name: t.name || `Faixa ${t.index + 1}`,
+      isPiano: isPianoProgram(t.playbackInfo.program),
+    }));
 }
 
 function timelineOf(api: alphaTab.AlphaTabApi, track: number | null) {

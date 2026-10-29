@@ -100,9 +100,7 @@ export class TempoMap {
   private readonly points: { tick: number; tempo: number; ms: number }[] = [];
 
   constructor(cache: TickCacheLike, initialTempo = 120) {
-    const changes = cache.masterBars
-      .flatMap((b) => b.tempoChanges)
-      .sort((a, b) => a.tick - b.tick);
+    const changes = cache.masterBars.flatMap((b) => b.tempoChanges).sort((a, b) => a.tick - b.tick);
     let last = { tick: 0, tempo: changes[0]?.tick === 0 ? changes[0].tempo : initialTempo, ms: 0 };
     this.points.push(last);
     for (const c of changes) {

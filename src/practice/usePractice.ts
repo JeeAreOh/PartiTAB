@@ -203,12 +203,19 @@ export function usePractice({ apiRef, timeline, tempo, speed, setMutedHands }: O
     if (mode === "wait") {
       api.pause();
       // No fim da música, recomeça do início.
-      const startTick = api.tickPosition >= timeline[timeline.length - 1].tick ? 0 : api.tickPosition;
+      const startTick =
+        api.tickPosition >= timeline[timeline.length - 1].tick ? 0 : api.tickPosition;
       wait.current = new WaitSession(timeline, hands, startTick);
       enterStep();
     } else if (mode === "play") {
       const notes = timeline.flatMap((s) => s.notes);
-      judge.current = new PlayAlongJudge(notes, hands, (t) => tempo.ms(t), speed, tempo.ms(api.tickPosition));
+      judge.current = new PlayAlongJudge(
+        notes,
+        hands,
+        (t) => tempo.ms(t),
+        speed,
+        tempo.ms(api.tickPosition),
+      );
       position.current = { tick: api.tickPosition, at: performance.now() };
       api.play();
     }
@@ -229,14 +236,20 @@ export function usePractice({ apiRef, timeline, tempo, speed, setMutedHands }: O
         if (result.type === "ignored") return;
         if (result.type === "wrong") {
           flash(key, "bad");
-          setState((s) => ({ ...s, tally: count(s.tally, "wrong"), last: { verdict: "wrong", key } }));
+          setState((s) => ({
+            ...s,
+            tally: count(s.tally, "wrong"),
+            last: { verdict: "wrong", key },
+          }));
           return;
         }
         flash(key, "good");
         setState((s) => ({
           ...s,
           tally: count(
-            result.type === "advance" ? { ...s.tally, expected: s.tally.expected + required } : s.tally,
+            result.type === "advance"
+              ? { ...s.tally, expected: s.tally.expected + required }
+              : s.tally,
             "hit",
           ),
           last: { verdict: "hit", key },

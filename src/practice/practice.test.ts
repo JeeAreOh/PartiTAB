@@ -103,7 +103,11 @@ describe("buildTimeline", () => {
 describe("TempoMap", () => {
   it("converte pulsos em ms com mudanças de andamento", () => {
     const c = cache([[0, Q, 0, [60]]], 2, 120);
-    c.masterBars.push({ start: 4 * Q, tempoChanges: [{ tick: 4 * Q, tempo: 60 }], firstBeat: null });
+    c.masterBars.push({
+      start: 4 * Q,
+      tempoChanges: [{ tick: 4 * Q, tempo: 60 }],
+      firstBeat: null,
+    });
     const map = new TempoMap(c);
     expect(map.ms(Q)).toBe(500);
     expect(map.ms(4 * Q)).toBe(2000);
@@ -202,7 +206,12 @@ describe("removeHandNotes", () => {
       ]),
       0,
     );
-    const ev = (tick: number, type: number, channel: number, noteKey: number) => ({ tick, type, channel, noteKey });
+    const ev = (tick: number, type: number, channel: number, noteKey: number) => ({
+      tick,
+      type,
+      channel,
+      noteKey,
+    });
     const tracks = [
       { events: [ev(10, 128, 0, 64), ev(10, 128, 0, 48), ev(10, 128, 5, 64), ev(970, 144, 0, 64)] },
     ];

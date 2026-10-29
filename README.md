@@ -4,7 +4,7 @@ App de prática de piano para Windows: leitor de partitura (Guitar Pro, MusicXML
 
 O plano completo está em [docs/PLANO.md](docs/PLANO.md).
 
-## Estado atual: fase 3 — motor de prática
+## Estado atual: fase 4 — redutor para piano e biblioteca
 
 **Fase 1 — piano virtual**
 
@@ -37,6 +37,26 @@ Três modos na barra de cima:
 
 O motor de prática roda na interface (TypeScript), não no Rust: o som do teclado continua indo direto do MIDI ao sintetizador, e o atraso de poucos ms até a interface afeta só a correção. Ainda não há compensação da latência da saída de áudio da reprodução; se as notas aparecerem sempre "adiantadas", é isso.
 
+**Biblioteca de partituras**
+
+- Toda partitura aberta entra na biblioteca automaticamente; dá para adicionar várias de uma vez. O arquivo é copiado para a pasta de dados do app (`%APPDATA%\com.partitab.app\partituras`), então continua lá mesmo se o original for movido. O mesmo arquivo importado de novo não duplica.
+- Filtros por situação (todas, não tocadas, já tocadas, favoritas), dificuldade, estilo e artista, com contagem; busca sem acento; ordenação por título, artista, adicionadas, tocadas recentemente, melhor nota ou dificuldade.
+- Título e artista vêm do próprio arquivo e são editáveis; estilo é livre (sugere os já usados). A dificuldade (1 a 5 estrelas) é estimada pelo app (notas por segundo, acordes, duas mãos, extensão) e pode ser trocada à mão.
+- Cada prática nos modos Esperar e Tocar junto vira uma execução no histórico (nota, precisão, modo, mão, arranjo, andamento). A **melhor nota** conta só execuções completas; a **última** é a mais recente.
+- Cada música lembra o arranjo e a faixa da última vez.
+- Dados em SQLite (`partitab.db`), na mesma pasta.
+
+**Fase 4 — redutor para piano**
+
+Em **Arranjo**, qualquer partitura (tabs de guitarra inclusive) vira uma faixa de piano em pauta dupla, sem tirar as outras faixas — a banda continua tocando junto:
+
+- **Nível 1** — só a melodia na mão direita.
+- **Nível 2** — melodia + fundamental do baixo na mão esquerda, uma nota por tempo forte (4/4 em mínimas, 3/4 em mínima pontuada, 6/8 em semínimas pontuadas).
+- **Nível 3** — melodia + tríades fechadas tiradas do acompanhamento, com a cifra escrita sobre a melodia quando o acorde muda. As inversões são escolhidas para a mão esquerda se mexer o mínimo.
+- A faixa da melodia é adivinhada (voz/solo: a mais aguda e menos polifônica, com bônus pelo nome) e pode ser trocada.
+- **Tom fácil**: transpõe para Dó, Sol ou Fá (ou Lá, Mi, Ré menor), o mais próximo; a banda é transposta junto na reprodução. A melodia fica perto do dó central e tudo cabe nas 61 teclas.
+- **Salvar na biblioteca** guarda o arranjo como uma partitura nova; **Exportar…** gera um `.gp` que abre no MuseScore para ajustes à mão.
+
 Arquivos MIDI (`.mid`) ainda não abrem: o alphaTab não importa MIDI. Fica para quando a separação de mãos por altura for implementada.
 
 ## Como rodar no Windows
@@ -63,6 +83,13 @@ Se o teclado continuar soando junto com o PC, desligue o Local manualmente na fu
 src/
   App.tsx            interface: barra da partitura, ajustes, teclado virtual
   useScore.ts        integração com o alphaTab (carregar, faixas, reprodução, MIDI sem a mão do aluno)
+  reducer/
+    harmony.ts       tonalidade, acordes, tríades, encaixe nas 61 teclas, dificuldade
+    reduce.ts        monta a faixa de piano (níveis 1 a 3) dentro da partitura
+  library/
+    Library.tsx      tela da biblioteca (filtros, lista, detalhes, histórico)
+    filter.ts        filtros, contagens e ordenação
+    useLibrary.ts    ligação com o banco
   practice/
     timeline.ts      notas da faixa em ordem de execução, mãos, andamento
     engine.ts        modo espera, avaliação de tempo, pontuação
@@ -71,8 +98,9 @@ src/
 src-tauri/src/
   midi.rs            entrada MIDI, tradução das mensagens, Local Control
   audio.rs           saída cpal + RustySynth, sem locks no callback de áudio
+  library.rs         biblioteca em SQLite: músicas, cópias dos arquivos, execuções
   lib.rs             estado do app e comandos Tauri
 docs/PLANO.md        plano do projeto
 ```
 
-Testes: `npm test` (motor de prática) e `cd src-tauri && cargo test` (MIDI).
+Testes: `npm test` (prática, redutor, filtros da biblioteca) e `cd src-tauri && cargo test` (MIDI e biblioteca).

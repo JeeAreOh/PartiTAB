@@ -448,3 +448,359 @@ button.primary {
   padding-bottom: 6px;
   pointer-events: none;
 }
+
+/* ---------------------------------------------------------------- vistas */
+
+.views .count {
+  display: inline-block;
+  min-width: 1.6em;
+  margin-left: 4px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--border);
+  color: var(--text);
+  font-size: 0.8rem;
+}
+
+.views .on .count {
+  background: #ffffff40;
+  color: #fff;
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+}
+
+.field select {
+  max-width: 220px;
+}
+
+.notice {
+  margin: 0;
+  color: var(--ok);
+}
+
+button.link {
+  border: none;
+  background: none;
+  padding: 0 4px;
+  color: var(--accent);
+}
+
+button.danger {
+  color: var(--error);
+  border-color: var(--error);
+  background: none;
+}
+
+.small {
+  font-size: 0.85rem;
+}
+
+.workspace {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.empty .row {
+  justify-content: center;
+}
+
+.library-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  background: var(--bg);
+  display: flex;
+}
+
+/* ------------------------------------------------------------ biblioteca */
+
+.library {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 12px;
+}
+
+.library.with-details {
+  grid-template-columns: 220px minmax(0, 1fr) 320px;
+}
+
+.lib-filters,
+.lib-main,
+.lib-details {
+  min-height: 0;
+  overflow: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.lib-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px;
+}
+
+.lib-filters input[type="search"] {
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  margin-bottom: 6px;
+}
+
+.lib-filters h3,
+.lib-details h3 {
+  margin: 12px 0 4px;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.facet {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  background: none;
+  padding: 4px 8px;
+  border-radius: 6px;
+  text-align: left;
+}
+
+.facet span:last-child {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.facet:hover {
+  background: var(--bg);
+}
+
+.facet.on {
+  background: var(--accent);
+  color: #fff;
+}
+
+.facet.on span:last-child,
+.facet.on .stars .off {
+  color: #ffffffb0;
+}
+
+.lib-main {
+  display: flex;
+  flex-direction: column;
+}
+
+.lib-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.sort {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+}
+
+.lib-empty {
+  padding: 48px 24px;
+  text-align: center;
+}
+
+table.songs,
+table.attempts {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.songs th,
+.attempts th {
+  position: sticky;
+  top: 53px;
+  background: var(--surface);
+  text-align: left;
+  font-weight: 600;
+  font-size: 0.8rem;
+  color: var(--muted);
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.attempts th {
+  position: static;
+}
+
+.songs td,
+.attempts td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.songs .num,
+.attempts .num {
+  text-align: right;
+}
+
+.songs tbody tr {
+  cursor: default;
+}
+
+.songs tbody tr:hover {
+  background: var(--bg);
+}
+
+.songs tr.selected {
+  background: rgb(var(--key-down) / 0.12);
+}
+
+.songs .title {
+  font-weight: 600;
+}
+
+.badge {
+  margin-left: 8px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  font-size: 0.7rem;
+  font-weight: 500;
+}
+
+.stars {
+  color: rgb(var(--key-score));
+  letter-spacing: 1px;
+  white-space: nowrap;
+}
+
+.stars .off {
+  color: var(--border);
+}
+
+.fav {
+  border: none;
+  background: none;
+  padding: 0 4px;
+  font-size: 1.05rem;
+  color: var(--muted);
+}
+
+.fav.on {
+  color: var(--error);
+}
+
+.lib-details {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+}
+
+.details-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.details-head h2 {
+  margin: 0;
+  font-size: 1.1rem;
+  overflow-wrap: anywhere;
+}
+
+.lib-details label:not(.check) {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.lib-details input:not([type="checkbox"]),
+.lib-details select {
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  margin: 4px 0 0;
+  font-size: 0.85rem;
+}
+
+.facts dt {
+  color: var(--muted);
+}
+
+.facts dd {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attempts {
+  font-size: 0.85rem;
+}
+
+.lib-details .danger {
+  margin-top: auto;
+}
+
+.play {
+  border: none;
+  background: none;
+  padding: 0 4px;
+  color: var(--accent);
+}
+
+.lib-details.placeholder {
+  justify-content: center;
+  text-align: center;
+}
+
+/* O cursor do alphaTab fica acima de tudo; a partitura some (sem perder o layout). */
+.library-open > .score,
+.library-open > .stage {
+  visibility: hidden;
+}
+
+.lib-toolbar button {
+  white-space: nowrap;
+}

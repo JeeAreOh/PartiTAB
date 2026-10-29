@@ -1,4 +1,5 @@
 mod audio;
+mod library;
 mod midi;
 
 use std::path::PathBuf;
@@ -8,6 +9,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, RunEvent, State};
 
 use audio::{AudioCommand, AudioEngine, AudioInfo};
+use library::{Attempt, Library, Song, SongPatch};
 use midi::{MidiSession, SynthMessage};
 
 struct AppState {
@@ -116,6 +118,92 @@ async fn read_file(path: String) -> Result<tauri::ipc::Response, String> {
         .map_err(|e| format!("Não foi possível ler o arquivo: {e}"))
 }
 
+/// Grava bytes num arquivo escolhido pelo usuário (ex.: exportar arranjo).
+#[tauri::command]
+async fn write_file(path: String, data: Vec<u8>) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || std::fs::write(&path, data))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| format!("Não foi possível salvar o arquivo: {e}"))
+}
+
+// ------------------------------------------------------------- biblioteca
+
+/// A biblioteca abre na inicialização; se falhar, os comandos devolvem o erro.
+struct LibraryState(Result<Library, String>);
+
+impl LibraryState {
+    fn get(&self) -> Result<&Library, String> {
+        self.0
+            .as_ref()
+            .map_err(|e| format!("Biblioteca indisponível: {e}"))
+    }
+}
+
+#[tauri::command]
+fn library_list(lib: State<LibraryState>) -> Result<Vec<Song>, String> {
+    lib.get()?.list()
+}
+
+#[tauri::command]
+async fn library_import(
+    app: AppHandle,
+    path: String,
+    title: Option<String>,
+    artist: Option<String>,
+) -> Result<Song, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<LibraryState>().get()?.import(
+            std::path::Path::new(&path),
+            title.as_deref(),
+            artist.as_deref(),
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+fn library_import_bytes(
+    lib: State<LibraryState>,
+    file_name: String,
+    data: Vec<u8>,
+    title: Option<String>,
+    artist: Option<String>,
+) -> Result<Song, String> {
+    lib.get()?
+        .import_bytes(&file_name, &data, title.as_deref(), artist.as_deref())
+}
+
+#[tauri::command]
+fn library_update(lib: State<LibraryState>, id: i64, patch: SongPatch) -> Result<Song, String> {
+    lib.get()?.update(id, patch)
+}
+
+#[tauri::command]
+fn library_set_auto_difficulty(
+    lib: State<LibraryState>,
+    id: i64,
+    difficulty: u8,
+) -> Result<Song, String> {
+    lib.get()?.set_auto_difficulty(id, difficulty)
+}
+
+#[tauri::command]
+fn library_delete(lib: State<LibraryState>, id: i64) -> Result<(), String> {
+    lib.get()?.delete(id)
+}
+
+#[tauri::command]
+fn library_record_attempt(lib: State<LibraryState>, attempt: Attempt) -> Result<Song, String> {
+    lib.get()?.record_attempt(&attempt)
+}
+
+#[tauri::command]
+fn library_attempts(lib: State<LibraryState>, song_id: i64) -> Result<Vec<Attempt>, String> {
+    lib.get()?.attempts(song_id)
+}
+
 /// Notas tocadas com o mouse no teclado virtual.
 #[tauri::command]
 fn play_note(state: State<AppState>, key: u8, velocity: u8) -> Result<(), String> {
@@ -139,6 +227,15 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(state)
+        .setup(|app| {
+            let library = app
+                .path()
+                .app_data_dir()
+                .map_err(|e| e.to_string())
+                .and_then(|dir| Library::open(&dir));
+            app.manage(LibraryState(library));
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             get_status,
             list_midi_inputs,
@@ -147,6 +244,15 @@ pub fn run() {
             load_soundfont,
             play_note,
             read_file,
+            write_file,
+            library_list,
+            library_import,
+            library_import_bytes,
+            library_update,
+            library_set_auto_difficulty,
+            library_delete,
+            library_record_attempt,
+            library_attempts,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

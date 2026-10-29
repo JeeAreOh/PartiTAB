@@ -8,8 +8,7 @@ const BLACK = new Set([1, 3, 6, 8, 10]);
 const NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
 export const isBlack = (key: number) => BLACK.has(key % 12);
-export const noteName = (key: number) =>
-  `${NAMES[key % 12]}${Math.floor(key / 12) - 1}`;
+export const noteName = (key: number) => `${NAMES[key % 12]}${Math.floor(key / 12) - 1}`;
 
 interface Props {
   /** Teclas pressionadas → velocidade (1–127). */

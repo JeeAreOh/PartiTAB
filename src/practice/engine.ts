@@ -25,7 +25,14 @@ export interface Tally {
   expected: number;
 }
 
-export const emptyTally = (): Tally => ({ hit: 0, early: 0, late: 0, wrong: 0, miss: 0, expected: 0 });
+export const emptyTally = (): Tally => ({
+  hit: 0,
+  early: 0,
+  late: 0,
+  wrong: 0,
+  miss: 0,
+  expected: 0,
+});
 
 export function count(tally: Tally, verdict: Verdict): Tally {
   return { ...tally, [verdict]: tally[verdict] + 1 };

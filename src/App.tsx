@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
-import { api, type Status } from "./api";
+import { open, save } from "@tauri-apps/plugin-dialog";
+import { api, type Song, type Status } from "./api";
 import { Keyboard } from "./Keyboard";
-import { useScore } from "./useScore";
+import { keyName, useScore } from "./useScore";
+import { Library } from "./library/Library";
+import { parsePrefs, readMetadata, useLibrary, type SongPrefs } from "./library/useLibrary";
+import { LEVELS, type Level } from "./reducer/reduce";
+import { estimateDifficulty } from "./reducer/harmony";
 import { usePractice, type Mode } from "./practice/usePractice";
 import { accuracy, score as points, type Judgement } from "./practice/engine";
 import type { HandChoice } from "./practice/timeline";
@@ -10,7 +14,9 @@ import "./App.css";
 
 const LAST_PORT = "partitab.midiPort";
 const LAST_SOUNDFONT = "partitab.soundfont";
+/** Caminho da última partitura (versões antes da biblioteca). */
 const LAST_SCORE = "partitab.score";
+const LAST_SONG = "partitab.songId";
 const MOUSE_VELOCITY = 90;
 const SCORE_EXTENSIONS = ["gp", "gp3", "gp4", "gp5", "gpx", "musicxml", "mxl", "xml", "cap"];
 
@@ -77,10 +83,14 @@ function App() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
-  const [scorePath, setScorePath] = useState<string | null>(null);
+  const [currentId, setCurrentId] = useState<number | null>(null);
+  const [view, setView] = useState<"library" | "score">("score");
+  const [notice, setNotice] = useState<string | null>(null);
   const [speed, setSpeed] = useState(100);
   const [solo, setSolo] = useState(false);
   const score = useScore(setError);
+  const library = useLibrary(setError);
+  const currentSong = library.songs.find((s) => s.id === currentId) ?? null;
   const practice = usePractice({
     apiRef: score.apiRef,
     timeline: score.state.timeline,
@@ -119,14 +129,32 @@ function App() {
       return next;
     });
 
-  const openScore = useCallback(
-    async (path: string) => {
-      const data = await api.readFile(path);
-      score.load(data);
-      setScorePath(path);
-      storage.set(LAST_SCORE, path);
+  /** Abre uma música da biblioteca, com o arranjo e a faixa da última vez. */
+  const openSong = useCallback(
+    async (song: Song) => {
+      const data = await api.readFile(song.path);
+      const prefs = parsePrefs(song);
+      const options =
+        prefs.level && prefs.melody != null
+          ? { level: prefs.level, melody: prefs.melody, transpose: prefs.transpose ?? true }
+          : null;
+      if (!score.load(data, options, options ? undefined : prefs.track)) return;
+      setCurrentId(song.id);
+      storage.set(LAST_SONG, String(song.id));
+      setView("score");
     },
     [score.load],
+  );
+
+  /** Abre um arquivo do disco: entra na biblioteca (sem duplicar) e abre. */
+  const openFile = useCallback(
+    async (path: string) => {
+      const data = await api.readFile(path);
+      const meta = readMetadata(data);
+      if (!meta) throw new Error(`Formato não reconhecido: ${fileName(path)}`);
+      await openSong(await library.importFile(path, meta));
+    },
+    [openSong, library.importFile],
   );
 
   // Inicialização: estado, portas e as últimas escolhas do usuário.
@@ -146,12 +174,17 @@ function App() {
         setSelected(port);
         current = await api.connectMidi(port).catch(() => current);
       }
-      const last = storage.get(LAST_SCORE);
-      if (last) await openScore(last).catch(() => storage.set(LAST_SCORE, null));
+      const songs = await api.library.list().catch(() => [] as Song[]);
+      const lastSong = songs.find((s) => String(s.id) === storage.get(LAST_SONG));
+      const legacy = storage.get(LAST_SCORE);
+      if (lastSong) await openSong(lastSong).catch(() => storage.set(LAST_SONG, null));
+      else if (legacy) await openFile(legacy).catch(() => undefined);
+      storage.set(LAST_SCORE, null);
+      if (!lastSong && !legacy) setView("library");
       if (!current.midiPort || !current.soundfont) setShowSettings(true);
       return current;
     });
-  }, [run, refreshPorts, openScore]);
+  }, [run, refreshPorts, openSong, openFile]);
 
   useEffect(() => {
     const unlisten = api.onKey((e) => {
@@ -208,16 +241,153 @@ function App() {
       return next;
     });
 
+  const scoreFilter = {
+    name: "Partituras (Guitar Pro, MusicXML, Capella)",
+    extensions: SCORE_EXTENSIONS,
+  };
+
   const chooseScore = () =>
     run(async () => {
-      const path = await open({
-        title: "Abrir partitura",
-        filters: [
-          { name: "Partituras (Guitar Pro, MusicXML, Capella)", extensions: SCORE_EXTENSIONS },
-        ],
-      });
-      if (typeof path === "string") await openScore(path);
+      const path = await open({ title: "Abrir partitura", filters: [scoreFilter] });
+      if (typeof path === "string") await openFile(path);
     });
+
+  /** Adiciona vários arquivos à biblioteca sem abrir. */
+  const addToLibrary = () =>
+    run(async () => {
+      const paths = await open({
+        title: "Adicionar partituras à biblioteca",
+        multiple: true,
+        filters: [scoreFilter],
+      });
+      if (!paths) return;
+      const failed: string[] = [];
+      for (const path of Array.isArray(paths) ? paths : [paths]) {
+        try {
+          const meta = readMetadata(await api.readFile(path));
+          if (!meta) throw new Error();
+          await library.importFile(path, meta);
+        } catch {
+          failed.push(fileName(path));
+        }
+      }
+      if (failed.length) setError(`Não foi possível adicionar: ${failed.join(", ")}`);
+    });
+
+  // ------------------------------------------------------------- arranjo
+
+  const savePrefs = (patch: SongPrefs) => {
+    if (currentSong) {
+      library.update(currentSong.id, {
+        prefs: JSON.stringify({ ...parsePrefs(currentSong), ...patch }),
+      });
+    }
+  };
+
+  const changeArrangement = (level: 0 | Level, melody?: number | null, transpose?: boolean) => {
+    practice.stop();
+    const current = score.state.arrangement;
+    const mel = melody ?? current?.melody ?? score.state.roles.melody;
+    const tr = transpose ?? current?.transpose ?? true;
+    if (level === 0) score.arrange(null);
+    else if (mel !== null) score.arrange({ level, melody: mel, transpose: tr });
+    else return setError("Nenhuma faixa com melodia para montar o arranjo");
+    savePrefs({ level, melody: mel, transpose: tr });
+  };
+
+  const changeTrack = (index: number) => {
+    score.selectTrack(index);
+    if (!score.state.arrangement) savePrefs({ track: index });
+  };
+
+  const arrangementTitle = () =>
+    `${currentSong?.title ?? "Arranjo"} (piano, nível ${score.state.arrangement?.level})`;
+
+  const saveArrangement = () =>
+    run(async () => {
+      const data = score.exportGp();
+      if (!data || !currentSong || !score.state.arrangement) return;
+      const title = arrangementTitle();
+      const song = await library.importBytes(`${title}.gp`, data, title, currentSong.artist);
+      await library.update(song.id, {
+        style: currentSong.style,
+        prefs: JSON.stringify({ level: 0, track: score.state.track } satisfies SongPrefs),
+      });
+      setNotice(`"${title}" salvo na biblioteca. Para ajustar no MuseScore, use Exportar.`);
+    });
+
+  const exportArrangement = () =>
+    run(async () => {
+      const data = score.exportGp();
+      if (!data) return;
+      const path = await save({
+        title: "Exportar em Guitar Pro (abre no MuseScore)",
+        defaultPath: `${arrangementTitle()}.gp`,
+        filters: [{ name: "Guitar Pro 7", extensions: ["gp"] }],
+      });
+      if (path) {
+        await api.writeFile(path, data);
+        setNotice(`Exportado para ${fileName(path)}`);
+      }
+    });
+
+  // ------------------------------------------------- histórico e dificuldade
+
+  // Ao terminar (ou parar) uma prática com notas avaliadas, grava na biblioteca.
+  const wasRunning = useRef(false);
+  const p0 = practice.state;
+  useEffect(() => {
+    const ended = wasRunning.current && !p0.running;
+    wasRunning.current = p0.running;
+    const t = p0.tally;
+    if (!ended || !currentSong || t.hit + t.early + t.late + t.wrong + t.miss === 0) return;
+    const track = score.state.tracks.find((x) => x.index === score.state.track);
+    library.recordAttempt({
+      songId: currentSong.id,
+      mode: p0.mode,
+      hands: p0.hands,
+      track: track?.name ?? "",
+      level: score.state.arrangement ? String(score.state.arrangement.level) : "original",
+      speed,
+      score: points(t),
+      accuracy: accuracy(t),
+      hit: t.hit,
+      early: t.early,
+      late: t.late,
+      wrong: t.wrong,
+      miss: t.miss,
+      completed: p0.finished,
+    });
+    // Só reage ao fim da prática.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [p0.running]);
+
+  // Estima a dificuldade de músicas novas pela faixa aberta (partitura original).
+  const estimated = useRef(new Set<number>());
+  useEffect(() => {
+    const { timeline, tempo, arrangement } = score.state;
+    if (
+      !currentSong ||
+      currentSong.difficulty !== null ||
+      arrangement ||
+      !tempo ||
+      timeline.length < 2
+    )
+      return;
+    if (estimated.current.has(currentSong.id)) return;
+    estimated.current.add(currentSong.id);
+    const notes = timeline.flatMap((s) => s.notes);
+    const keys = notes.map((n) => n.key);
+    library.setAutoDifficulty(
+      currentSong.id,
+      estimateDifficulty({
+        noteTimes: timeline.flatMap((s) => s.notes.map(() => tempo.ms(s.tick))),
+        maxChord: Math.max(...timeline.map((s) => s.notes.length)),
+        bothHands: notes.some((n) => n.hand === "left") && notes.some((n) => n.hand === "right"),
+        range: [Math.min(...keys), Math.max(...keys)],
+      }),
+    );
+  }, [currentSong, score.state, library.setAutoDifficulty]);
 
   const changeSpeed = (value: number) => {
     setSpeed(value);
@@ -232,26 +402,47 @@ function App() {
   const { state } = score;
   const p = practice.state;
   const practicing = p.mode !== "listen";
+  const { arrangement } = state;
 
   return (
     <main>
       <header>
         <h1>PartiTAB</h1>
-        <div className="toolbar">
-          <button onClick={chooseScore} disabled={busy}>
-            Abrir partitura…
+        <div className="segmented views" role="tablist">
+          <button
+            role="tab"
+            aria-selected={view === "library"}
+            className={view === "library" ? "on" : ""}
+            onClick={() => setView("library")}
+          >
+            Biblioteca <span className="count">{library.songs.length}</span>
           </button>
-          {state.tracks.length > 0 && (
+          <button
+            role="tab"
+            aria-selected={view === "score"}
+            className={view === "score" ? "on" : ""}
+            onClick={() => setView("score")}
+          >
+            Partitura
+          </button>
+        </div>
+        <div className="toolbar">
+          {view === "score" && (
+            <button onClick={chooseScore} disabled={busy}>
+              Abrir arquivo…
+            </button>
+          )}
+          {view === "score" && state.tracks.length > 0 && (
             <>
               <select
                 value={state.track ?? ""}
-                onChange={(e) => score.selectTrack(Number(e.target.value))}
+                onChange={(e) => changeTrack(Number(e.target.value))}
                 title="Faixa exibida"
               >
                 {state.tracks.map((t) => (
                   <option key={t.index} value={t.index}>
                     {t.name}
-                    {t.isPiano ? " (piano)" : ""}
+                    {t.isPiano && !/piano/i.test(t.name) ? " (piano)" : ""}
                   </option>
                 ))}
               </select>
@@ -308,7 +499,11 @@ function App() {
               </label>
               {p.mode !== "wait" && (
                 <label className="check">
-                  <input type="checkbox" checked={solo} onChange={(e) => setSolo(e.target.checked)} />
+                  <input
+                    type="checkbox"
+                    checked={solo}
+                    onChange={(e) => setSolo(e.target.checked)}
+                  />
                   Só esta faixa
                 </label>
               )}
@@ -324,7 +519,76 @@ function App() {
         </button>
       </header>
 
-      {practicing && state.tracks.length > 0 && (
+      {view === "score" && state.tracks.length > 0 && (
+        <section className="practice-bar">
+          <label className="field">
+            Arranjo
+            <select
+              value={arrangement?.level ?? 0}
+              onChange={(e) => changeArrangement(Number(e.target.value) as 0 | Level)}
+              title="Redução para piano a partir das faixas da música"
+            >
+              <option value={0}>Original</option>
+              {LEVELS.map(([level, label]) => (
+                <option key={level} value={level}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+          {arrangement && (
+            <>
+              <label className="field">
+                Melodia
+                <select
+                  value={arrangement.melody}
+                  onChange={(e) => changeArrangement(arrangement.level, Number(e.target.value))}
+                >
+                  {state.sourceTracks.map((t) => (
+                    <option key={t.index} value={t.index}>
+                      {t.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label
+                className="check"
+                title="Transpõe para Dó, Sol ou Fá (ou Lá, Mi, Ré menor); a banda acompanha"
+              >
+                <input
+                  type="checkbox"
+                  checked={arrangement.transpose}
+                  onChange={(e) =>
+                    changeArrangement(arrangement.level, undefined, e.target.checked)
+                  }
+                />
+                Tom fácil
+              </label>
+              <span className="muted">
+                Tom {keyName(arrangement.key)}
+                {arrangement.shift !== 0 &&
+                  ` → ${keyName({ ...arrangement.key, tonic: (arrangement.key.tonic + arrangement.shift + 12) % 12 })}`}
+              </span>
+              <button
+                onClick={saveArrangement}
+                disabled={busy || !currentSong}
+                title="Guarda este arranjo como uma partitura nova"
+              >
+                Salvar na biblioteca
+              </button>
+              <button
+                onClick={exportArrangement}
+                disabled={busy}
+                title="Arquivo .gp, que abre no MuseScore e no Guitar Pro"
+              >
+                Exportar…
+              </button>
+            </>
+          )}
+        </section>
+      )}
+
+      {view === "score" && practicing && state.tracks.length > 0 && (
         <section className="practice-bar">
           <div className="segmented" role="group" aria-label="Mão">
             {HANDS.map(([h, label]) => (
@@ -390,8 +654,8 @@ function App() {
                   <p className="muted">Som interno do teclado desligado (Local Off).</p>
                 ) : (
                   <p className="warn">
-                    Não consegui desligar o som interno. No PSR-E463, ajuste a função 050
-                    (Local) para OFF.
+                    Não consegui desligar o som interno. No PSR-E463, ajuste a função 050 (Local)
+                    para OFF.
                   </p>
                 )}
                 <button onClick={disconnect} disabled={busy}>
@@ -449,43 +713,85 @@ function App() {
         </section>
       )}
 
-      {error && <p className="error">{error}</p>}
+      {error && (
+        <p className="error">
+          {error}{" "}
+          <button className="link" onClick={() => setError(null)} aria-label="Fechar aviso">
+            ✕
+          </button>
+        </p>
+      )}
+      {notice && (
+        <p className="notice">
+          {notice}{" "}
+          <button className="link" onClick={() => setNotice(null)} aria-label="Fechar aviso">
+            ✕
+          </button>
+        </p>
+      )}
 
-      <section className="score" ref={score.scrollRef}>
-        {!scorePath && (
-          <div className="empty">
-            <p>Abra um arquivo Guitar Pro (.gp3 a .gp), MusicXML ou Capella.</p>
-            <button className="primary" onClick={chooseScore} disabled={busy}>
-              Abrir partitura…
-            </button>
+      <div className={view === "library" ? "workspace library-open" : "workspace"}>
+        <section className="score" ref={score.scrollRef}>
+          {state.tracks.length === 0 && (
+            <div className="empty">
+              <p>
+                Abra um arquivo Guitar Pro (.gp3 a .gp), MusicXML ou Capella, ou escolha na
+                biblioteca.
+              </p>
+              <div className="row">
+                <button className="primary" onClick={chooseScore} disabled={busy}>
+                  Abrir arquivo…
+                </button>
+                <button onClick={() => setView("library")}>Ir para a biblioteca</button>
+              </div>
+            </div>
+          )}
+          <div ref={score.containerRef} />
+        </section>
+
+        <section className="stage">
+          <div className="indicators">
+            <span className={sustain ? "pill on" : "pill"}>Sustain</span>
+            <span className="legend you">Você</span>
+            <span className="legend score-note">
+              {p.running && p.mode === "wait" ? "Toque agora" : "Partitura"}
+            </span>
+          </div>
+          <Keyboard
+            pressed={pressed}
+            expected={p.running && p.mode === "wait" ? p.waiting : state.sounding}
+            flashes={p.flashes}
+            onPress={(k) => {
+              setKey(k, MOUSE_VELOCITY);
+              api.playNote(k, MOUSE_VELOCITY);
+              practice.onNote(k);
+            }}
+            onRelease={(k) => {
+              setKey(k, null);
+              api.playNote(k, 0);
+            }}
+          />
+        </section>
+        {view === "library" && (
+          <div className="library-layer">
+            <Library
+              songs={library.songs}
+              currentId={currentId}
+              busy={busy}
+              onOpen={(song) => run(() => openSong(song))}
+              onImport={addToLibrary}
+              onUpdate={library.update}
+              onRemove={async (id) => {
+                await library.remove(id);
+                if (id === currentId) {
+                  setCurrentId(null);
+                  storage.set(LAST_SONG, null);
+                }
+              }}
+            />
           </div>
         )}
-        <div ref={score.containerRef} />
-      </section>
-
-      <section className="stage">
-        <div className="indicators">
-          <span className={sustain ? "pill on" : "pill"}>Sustain</span>
-          <span className="legend you">Você</span>
-          <span className="legend score-note">
-            {p.running && p.mode === "wait" ? "Toque agora" : "Partitura"}
-          </span>
-        </div>
-        <Keyboard
-          pressed={pressed}
-          expected={p.running && p.mode === "wait" ? p.waiting : state.sounding}
-          flashes={p.flashes}
-          onPress={(k) => {
-            setKey(k, MOUSE_VELOCITY);
-            api.playNote(k, MOUSE_VELOCITY);
-            practice.onNote(k);
-          }}
-          onRelease={(k) => {
-            setKey(k, null);
-            api.playNote(k, 0);
-          }}
-        />
-      </section>
+      </div>
     </main>
   );
 }
