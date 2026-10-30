@@ -42,7 +42,7 @@ O motor de prática roda na interface (TypeScript), não no Rust: o som do tecla
 
 **Interface**
 
-Três abas no topo: **Biblioteca**, **Partitura** e **Buscar**. Toda a configuração (porta MIDI, som, SoundFont) fica na gaveta de **Ajustes** (engrenagem ou o indicador de status no canto). Na partitura, uma barra com tocar/parar, andamento, **Faixa** (faixa e arranjo para piano) e **Vídeo**; logo abaixo, o modo (Ouvir, Esperar, Tocar junto), a mão e o placar. Tema claro e escuro conforme o Windows. Atalhos: <kbd>Espaço</kbd> toca/pausa, <kbd>M</kbd> marca compasso no vídeo, <kbd>Esc</kbd> fecha painéis.
+Três abas no topo: **Biblioteca**, **Partitura** e **Buscar**. Toda a configuração (porta MIDI, som, SoundFont) fica na gaveta de **Ajustes** (engrenagem ou o indicador de status no canto). Na partitura, uma barra com tocar/parar, andamento, **Faixa** (faixa e arranjo para piano) e **Vídeo**; logo abaixo, o modo (Ouvir, Esperar, Tocar junto), a mão e o placar. Tema claro e escuro conforme o Windows. Atalhos: <kbd>Espaço</kbd> toca/pausa, <kbd>F11</kbd> tela cheia, <kbd>M</kbd> marca compasso no vídeo, <kbd>Esc</kbd> fecha painéis.
 
 **Tocar junto com um vídeo do YouTube**
 
@@ -71,6 +71,7 @@ A aba **Buscar** procura a música no Cifra Club, Ultimate Guitar, Songsterr, Mu
 - **Gravar o que você toca.** O botão vermelho ao lado do tempo grava as notas e o pedal (do teclado MIDI ou do mouse). Depois, **Gravação → Ouvir** toca de volta com o cursor da partitura acompanhando, e **Exportar .mid…** salva um arquivo MIDI (abre em qualquer editor).
 - **Notas caindo.** Em **Exibir**, troque **Pauta** por **Notas caindo**: cada nota desce até a tecla certa do teclado virtual (azul = mão direita, verde = esquerda; a mão que você não está praticando fica apagada). Funciona em todos os modos, inclusive Esperar.
 - **Dedilhado sugerido.** Em **Exibir**, números de 1 (polegar) a 5 (mínimo) sobre as notas da pauta e dentro das notas caindo. É calculado pelo app (mão parada sempre que der, passagem do polegar nas escalas, acordes sem esticar demais): bom ponto de partida, mas confira trechos difíceis.
+- **Tela cheia.** Botão ao lado da engrenagem ou <kbd>F11</kbd>. Com mais de um monitor, **Ajustes → Tela** escolhe em qual a tela cheia abre (numerados da esquerda para a direita, com resolução e o principal marcado); trocar de monitor em tela cheia leva o app para o outro na hora. Opção de abrir o app já em tela cheia.
 - **Tamanho e layout da partitura.** Em **Exibir**: zoom de 60% a 160% e layout em página (rola para baixo) ou uma linha só (rola para o lado).
 - **Progresso** (aba própria). Minutos praticados hoje com meta diária (10 a 60 min), dias seguidos de prática, últimos 7 dias, precisão média, gráfico dos últimos 30 dias e as músicas que mais evoluíram (clique para abrir). Conta o tempo das práticas com correção.
 - **Backup.** Em **Ajustes → Backup**, **Fazer backup…** salva um `.zip` com o banco (músicas, práticas, leitura), as partituras, as capas e as preferências. **Restaurar backup…** troca a biblioteca pela do arquivo (os caminhos são refeitos para o computador atual) e guarda a anterior em `antes-da-restauracao`. SoundFonts baixados e o token do GitHub não entram.

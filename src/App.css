@@ -2472,3 +2472,11 @@ table.attempts {
   font-weight: 600;
   font-size: 0.85rem;
 }
+
+/* ===================================================================== tela */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}

@@ -21,6 +21,7 @@ import { FallingNotes } from "./practice/FallingNotes";
 import { fingerNotes } from "./practice/fingering";
 import { Settings } from "./Settings";
 import { useUpdates } from "./updates/useUpdates";
+import { useFullscreen } from "./ui/useFullscreen";
 import { useSound } from "./sound/useSound";
 import { TonePicker } from "./sound/TonePicker";
 import { Search, type DownloadResult } from "./search/Search";
@@ -153,6 +154,7 @@ function App() {
   const score = useScore(setError);
   const library = useLibrary(setError);
   const updates = useUpdates();
+  const screen = useFullscreen(setError);
   const sound = useSound({ status, setStatus, onError: setError });
   const currentSong = library.songs.find((s) => s.id === currentId) ?? null;
   const changeSpeed = (value: number) => {
@@ -776,6 +778,14 @@ function App() {
               : !soundReady
                 ? "Escolher som do piano"
                 : status?.midiPort}
+          </button>
+          <button
+            className="icon-button"
+            onClick={screen.toggle}
+            aria-label={screen.fullscreen ? "Sair da tela cheia" : "Tela cheia"}
+            title={screen.fullscreen ? "Sair da tela cheia (F11)" : "Tela cheia (F11)"}
+          >
+            <Icon name={screen.fullscreen ? "fullscreen-exit" : "fullscreen"} size={19} />
           </button>
           <button
             className="icon-button"
@@ -1528,6 +1538,7 @@ function App() {
           registerTap={registerCalibration}
           onError={setError}
           onNotice={setNotice}
+          screen={screen}
           onClose={() => setShowSettings(false)}
           updates={updates}
         />

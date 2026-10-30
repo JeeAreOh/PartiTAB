@@ -5,6 +5,8 @@ import { UpdatesSection } from "./updates/UpdatesSection";
 import { SoundSection } from "./sound/SoundSection";
 import { LatencySection } from "./practice/LatencySection";
 import { BackupSection } from "./library/BackupSection";
+import { DisplaySection } from "./ui/DisplaySection";
+import type { Fullscreen } from "./ui/useFullscreen";
 import type { Sound } from "./sound/useSound";
 import type { Updates } from "./updates/useUpdates";
 
@@ -27,6 +29,7 @@ interface Props {
   registerTap: (handler: ((key: number) => void) | null) => void;
   onError: (message: string) => void;
   onNotice: (message: string) => void;
+  screen: Fullscreen;
   onClose: () => void;
   updates: Updates;
 }
@@ -113,6 +116,8 @@ export function Settings(p: Props) {
           onDownload={p.onDownloadSoundfont}
         />
 
+        <DisplaySection screen={p.screen} />
+
         <LatencySection latency={p.latency} onChange={p.onLatency} registerTap={p.registerTap} />
 
         <BackupSection onError={p.onError} onNotice={p.onNotice} />
@@ -128,6 +133,10 @@ export function Settings(p: Props) {
               <kbd>Espaço</kbd>
             </dt>
             <dd>Tocar / pausar</dd>
+            <dt>
+              <kbd>F11</kbd>
+            </dt>
+            <dd>Tela cheia</dd>
             <dt>
               <kbd>M</kbd>
             </dt>

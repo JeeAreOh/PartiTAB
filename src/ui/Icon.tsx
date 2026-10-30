@@ -48,6 +48,8 @@ const PATHS = {
     </>
   ),
   close: <path d="M6 6l12 12M18 6 6 18" />,
+  fullscreen: <path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" />,
+  "fullscreen-exit": <path d="M9 4v5H4M20 9h-5V4M15 20v-5h5M4 15h5v5" />,
   plus: <path d="M12 5v14M5 12h14" />,
   keyboard: (
     <>
