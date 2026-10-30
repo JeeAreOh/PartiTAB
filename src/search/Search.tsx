@@ -54,17 +54,54 @@ export const SOURCES: Source[] = [
   {
     id: "imslp",
     name: "IMSLP",
-    description: "Biblioteca de domínio público (clássicos). A maioria é PDF; procure MusicXML.",
-    formats: ["MusicXML", "domínio público"],
+    description:
+      "Biblioteca de domínio público (clássicos). A maioria é PDF; procure MusicXML ou MIDI.",
+    formats: ["MusicXML", "MIDI", "domínio público"],
     search: "https://imslp.org/index.php?title=Special:Search&search={q}",
     home: "https://imslp.org/",
   },
   {
+    id: "piano-midi",
+    name: "Piano MIDI (piano-midi.de)",
+    description:
+      "Clássicos de piano tocados com as mãos em faixas separadas: a conversão para partitura sai muito boa. Gratuito para estudo.",
+    formats: ["MIDI", "piano"],
+    // O site não tem busca própria.
+    search: "https://duckduckgo.com/?q=site%3Apiano-midi.de+{q}",
+    home: "https://www.piano-midi.de/",
+  },
+  {
+    id: "bitmidi",
+    name: "BitMidi",
+    description:
+      "Mais de 100 mil MIDIs, muita música popular. Sem cadastro. Muitos têm a banda inteira, que o app divide entre as mãos.",
+    formats: ["MIDI"],
+    search: "https://bitmidi.com/search?q={q}",
+    home: "https://bitmidi.com/",
+  },
+  {
+    id: "freemidi",
+    name: "FreeMidi",
+    description: "MIDIs de pop e rock por artista, sem cadastro. Qualidade varia de arquivo para arquivo.",
+    formats: ["MIDI"],
+    search: "https://duckduckgo.com/?q=site%3Afreemidi.org+{q}",
+    home: "https://freemidi.org/",
+  },
+  {
+    id: "mutopia",
+    name: "Mutopia Project",
+    description:
+      "Partituras de domínio público editadas por voluntários, com MIDI limpo e no tempo. Peças com vários movimentos às vezes vêm em .zip.",
+    formats: ["MIDI", "domínio público"],
+    search: "https://duckduckgo.com/?q=site%3Amutopiaproject.org+{q}",
+    home: "https://www.mutopiaproject.org/",
+  },
+  {
     id: "web",
     name: "Busca na web",
-    description: "Procura arquivos Guitar Pro e MusicXML em qualquer site.",
-    formats: ["Guitar Pro", "MusicXML"],
-    search: "https://duckduckgo.com/?q={q}+(guitar+pro+OR+musicxml)+download",
+    description: "Procura arquivos Guitar Pro, MusicXML e MIDI em qualquer site.",
+    formats: ["Guitar Pro", "MusicXML", "MIDI"],
+    search: "https://duckduckgo.com/?q={q}+(guitar+pro+OR+musicxml+OR+midi)+download",
     home: "https://duckduckgo.com/",
   },
 ];

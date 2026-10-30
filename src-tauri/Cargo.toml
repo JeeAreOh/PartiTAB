@@ -1,6 +1,6 @@
 [package]
 name = "partitab"
-version = "0.2.7"
+version = "0.2.8"
 description = "Leitor de partitura e prática de piano"
 authors = ["Gefferson Oliveira"]
 edition = "2024"
