@@ -11,6 +11,9 @@ O plano completo está em [docs/PLANO.md](docs/PLANO.md).
 - Lista as portas MIDI e conecta ao teclado (lembra a última porta).
 - Ao conectar, envia **Local Control Off** (CC 122 = 0) para o teclado parar de soar sozinho; ao desconectar ou fechar o app, envia **Local On** de volta.
 - Cada tecla toca um piano SoundFont (`.sf2`) gerado no PC, com velocidade e pedal de sustain.
+- O app já abre com som: usa o SONiVOX (`src-tauri/resources/soundfonts/`, Apache 2.0) até você escolher outro.
+- **Timbre** na barra superior: lista os instrumentos do SoundFont por família (pianos, órgãos, cordas…), com busca, favoritos e volume. Trocar a voz no próprio teclado não muda o timbre do app.
+- Em **Ajustes → Som**: volume, reverb, sensibilidade ao toque (Leve, Normal, Pesada, Fixa) e um catálogo de SoundFonts gratuitos para baixar com um clique (GeneralUser GS, FluidR3 GM, TimGM6mb), conferidos por SHA-256 e guardados na pasta de dados do app.
 - O som vai do `midir` direto ao `rustysynth` e ao `cpal` (WASAPI), sem passar pela interface. O buffer pedido é de 256 frames (~5 ms a 48 kHz) quando o dispositivo permite.
 - Teclado virtual de 61 teclas (C2–C7) mostra o que está sendo tocado; também dá para tocar com o mouse.
 
@@ -119,7 +122,7 @@ npm run tauri build    # instalador em src-tauri/target/release/bundle
 
 1. Ligue o PSR-E463 pela porta **USB TO HOST** e abra o app.
 2. Em **Ajustes** (engrenagem), escolha a porta do teclado e clique em **Conectar**.
-3. Ainda em **Ajustes**, clique em **Escolher SoundFont…** e aponte para um `.sf2` de piano (o app lembra a escolha). Nenhum SoundFont acompanha o repositório; opções gratuitas: *Salamander Grand Piano*, *Yamaha C5 Grand*, *FluidR3_GM* (GM completo, ~140 MB).
+3. O som padrão já funciona. Para um piano melhor, em **Ajustes → Som** baixe o *GeneralUser GS* do catálogo ou use **Usar arquivo .sf2…** com um SoundFont seu (o app lembra a escolha).
 
 4. Na **Biblioteca**, use **Adicionar arquivos…** ou **Buscar na internet**.
 
@@ -161,6 +164,7 @@ src-tauri/src/
   search.rs          janela de busca: importa os arquivos baixados nela
   updates.rs         verificador de versão (releases do GitHub)
   covers.rs          busca e download de capas
+  sounds.rs          timbres, ajustes de som e catálogo de SoundFonts
   lib.rs             estado do app e comandos Tauri
 docs/PLANO.md        plano do projeto
 ```

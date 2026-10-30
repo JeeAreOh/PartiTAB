@@ -14,6 +14,45 @@ export interface Status {
   midiPort: string | null;
   localControlOff: boolean;
   soundfont: string | null;
+  /** O SoundFont carregado é o que acompanha o app. */
+  soundfontBuiltin: boolean;
+  /** Instrumentos do SoundFont carregado. */
+  presets: PresetInfo[];
+  sound: SoundSettings;
+}
+
+export interface PresetInfo {
+  bank: number;
+  patch: number;
+  name: string;
+}
+
+export type VelocityCurve = "light" | "normal" | "heavy" | "fixed";
+
+export interface SoundSettings {
+  bank: number;
+  patch: number;
+  /** 0–100. */
+  volume: number;
+  /** 0–127. */
+  reverb: number;
+  curve: VelocityCurve;
+}
+
+export interface CatalogItem {
+  id: string;
+  name: string;
+  description: string;
+  license: string;
+  size: number;
+  /** Caminho do arquivo, quando já foi baixado. */
+  path: string | null;
+}
+
+export interface SoundDownload {
+  id: string;
+  done: number;
+  total: number;
 }
 
 export type KeyEvent =
@@ -125,6 +164,15 @@ export const api = {
   connectMidi: (port: string) => invoke<Status>("connect_midi", { port }),
   disconnectMidi: () => invoke<Status>("disconnect_midi"),
   loadSoundfont: (path: string) => invoke<Status>("load_soundfont", { path }),
+  loadDefaultSoundfont: () => invoke<Status>("load_default_soundfont"),
+  setSound: (sound: SoundSettings) => invoke<Status>("set_sound", { sound }),
+  sounds: {
+    catalog: () => invoke<CatalogItem[]>("sound_catalog"),
+    download: (id: string) => invoke<string>("sound_download", { id }),
+    remove: (id: string) => invoke<void>("sound_remove", { id }),
+    onProgress: (handler: (e: SoundDownload) => void): Promise<UnlistenFn> =>
+      listen<SoundDownload>("sound-download", (e) => handler(e.payload)),
+  },
   playNote: (key: number, velocity: number) => invoke<void>("play_note", { key, velocity }),
   readFile: (path: string) =>
     invoke<ArrayBuffer>("read_file", { path }).then((b) => new Uint8Array(b)),

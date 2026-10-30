@@ -3,10 +3,12 @@ mod covers;
 mod library;
 mod midi;
 mod search;
+mod sounds;
 mod updates;
 
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, RunEvent, State};
@@ -14,11 +16,18 @@ use tauri::{AppHandle, Emitter, Manager, RunEvent, State};
 use audio::{AudioCommand, AudioEngine, AudioInfo};
 use library::{Attempt, CollectionResult, ErrorMap, Library, ReadingCard, Song, SongPatch};
 use midi::{MidiSession, SynthMessage};
+use sounds::{CatalogItem, PresetInfo, SoundSettings, VelocityCurve};
 
 struct AppState {
     audio: Result<AudioEngine, String>,
     midi: Mutex<Option<MidiSession>>,
     soundfont: Mutex<Option<String>>,
+    /// O SoundFont carregado é o que acompanha o app.
+    builtin: AtomicBool,
+    presets: Mutex<Vec<PresetInfo>>,
+    sound: Mutex<SoundSettings>,
+    /// Curva de toque, lida a cada nota que chega do teclado.
+    curve: Arc<AtomicU8>,
 }
 
 impl AppState {
@@ -35,6 +44,9 @@ struct Status {
     midi_port: Option<String>,
     local_control_off: bool,
     soundfont: Option<String>,
+    soundfont_builtin: bool,
+    presets: Vec<PresetInfo>,
+    sound: SoundSettings,
 }
 
 #[tauri::command]
@@ -46,6 +58,9 @@ fn get_status(state: State<AppState>) -> Status {
         midi_port: midi.as_ref().map(|s| s.port_name.clone()),
         local_control_off: midi.as_ref().is_some_and(MidiSession::local_control_off),
         soundfont: state.soundfont.lock().unwrap().clone(),
+        soundfont_builtin: state.builtin.load(Ordering::Relaxed),
+        presets: state.presets.lock().unwrap().clone(),
+        sound: *state.sound.lock().unwrap(),
     }
 }
 
@@ -57,13 +72,17 @@ fn list_midi_inputs() -> Result<Vec<String>, String> {
 #[tauri::command]
 fn connect_midi(app: AppHandle, state: State<AppState>, port: String) -> Result<Status, String> {
     let synth = state.audio()?.sender();
+    let curve = state.curve.clone();
     let mut current = state.midi.lock().unwrap();
     // Fecha a conexão anterior primeiro (religa o som interno daquele teclado).
     current.take();
     let session = MidiSession::open(&port, move |msg| {
         let (to_synth, to_ui) = midi::translate(msg);
         // O som sai antes de qualquer trabalho da interface.
-        if let Some(m) = to_synth {
+        if let Some(mut m) = to_synth {
+            if m.command == 0x90 {
+                m.data2 = VelocityCurve::from_u8(curve.load(Ordering::Relaxed)).apply(m.data2);
+            }
             let _ = synth.send(AudioCommand::Midi(m));
         }
         if let Some(e) = to_ui {
@@ -94,12 +113,10 @@ fn disconnect_midi(state: State<AppState>) -> Status {
     get_status(state)
 }
 
-#[tauri::command]
-async fn load_soundfont(app: AppHandle, path: String) -> Result<Status, String> {
-    let path = PathBuf::from(path);
+async fn load_soundfont_at(app: AppHandle, path: PathBuf, builtin: bool) -> Result<Status, String> {
     let handle = app.clone();
     let loaded = path.clone();
-    tauri::async_runtime::spawn_blocking(move || {
+    let presets = tauri::async_runtime::spawn_blocking(move || {
         handle.state::<AppState>().audio()?.load_soundfont(&loaded)
     })
     .await
@@ -107,7 +124,90 @@ async fn load_soundfont(app: AppHandle, path: String) -> Result<Status, String> 
 
     let state = app.state::<AppState>();
     *state.soundfont.lock().unwrap() = Some(path.to_string_lossy().into_owned());
+    state.builtin.store(builtin, Ordering::Relaxed);
+    *state.presets.lock().unwrap() = presets;
     Ok(get_status(state))
+}
+
+#[tauri::command]
+async fn load_soundfont(app: AppHandle, path: String) -> Result<Status, String> {
+    load_soundfont_at(app, PathBuf::from(path), false).await
+}
+
+/// Carrega o SoundFont que acompanha o app (som padrão, sem configurar nada).
+#[tauri::command]
+async fn load_default_soundfont(app: AppHandle) -> Result<Status, String> {
+    let path = app
+        .path()
+        .resolve(
+            sounds::DEFAULT_SOUNDFONT,
+            tauri::path::BaseDirectory::Resource,
+        )
+        .map_err(|e| e.to_string())?;
+    load_soundfont_at(app, path, true).await
+}
+
+/// Timbre, volume, reverb e curva de toque do piano.
+#[tauri::command]
+fn set_sound(state: State<AppState>, sound: SoundSettings) -> Result<Status, String> {
+    let sound = sound.clamped();
+    state.audio()?.set_sound(sound);
+    state.curve.store(sound.curve.to_u8(), Ordering::Relaxed);
+    *state.sound.lock().unwrap() = sound;
+    Ok(get_status(state))
+}
+
+fn soundfont_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    app.path()
+        .app_data_dir()
+        .map(|d| d.join(sounds::DOWNLOAD_DIR))
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn sound_catalog(app: AppHandle) -> Result<Vec<CatalogItem>, String> {
+    Ok(sounds::catalog(&soundfont_dir(&app)?))
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DownloadProgress {
+    id: String,
+    done: u64,
+    total: u64,
+}
+
+/// Baixa um SoundFont do catálogo (com progresso no evento
+/// "sound-download") e devolve o caminho do arquivo.
+#[tauri::command]
+async fn sound_download(app: AppHandle, id: String) -> Result<String, String> {
+    let dir = soundfont_dir(&app)?;
+    let total = sounds::entry(&id)?.size;
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut last = 0u64;
+        let path = sounds::download(&id, &dir, |done| {
+            // Um aviso a cada ~1% basta para a barra de progresso.
+            if done - last >= total / 100 || done == total {
+                last = done;
+                let _ = app.emit(
+                    "sound-download",
+                    DownloadProgress {
+                        id: id.clone(),
+                        done,
+                        total,
+                    },
+                );
+            }
+        })?;
+        Ok(path.to_string_lossy().into_owned())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+fn sound_remove(app: AppHandle, id: String) -> Result<(), String> {
+    sounds::remove(&id, &soundfont_dir(&app)?)
 }
 
 /// Lê um arquivo local (partitura ou SoundFont) para a interface. Devolve os
@@ -389,6 +489,10 @@ pub fn run() {
         audio: AudioEngine::start(),
         midi: Mutex::new(None),
         soundfont: Mutex::new(None),
+        builtin: AtomicBool::new(false),
+        presets: Mutex::new(Vec::new()),
+        sound: Mutex::new(SoundSettings::default()),
+        curve: Arc::new(AtomicU8::new(VelocityCurve::Normal.to_u8())),
     };
 
     tauri::Builder::default()
@@ -410,6 +514,11 @@ pub fn run() {
             connect_midi,
             disconnect_midi,
             load_soundfont,
+            load_default_soundfont,
+            set_sound,
+            sound_catalog,
+            sound_download,
+            sound_remove,
             play_note,
             read_file,
             write_file,

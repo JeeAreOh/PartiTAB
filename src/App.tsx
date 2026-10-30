@@ -15,6 +15,8 @@ import type { BarStat } from "./practice/engine";
 import { ReadingTrainer } from "./reading/ReadingTrainer";
 import { Settings } from "./Settings";
 import { useUpdates } from "./updates/useUpdates";
+import { useSound } from "./sound/useSound";
+import { TonePicker } from "./sound/TonePicker";
 import { Search, type DownloadResult } from "./search/Search";
 import { VideoPanel } from "./video/VideoPanel";
 import { youtubeId, type BarLookup, type SyncPoint } from "./video/sync";
@@ -116,6 +118,7 @@ function App() {
   const score = useScore(setError);
   const library = useLibrary(setError);
   const updates = useUpdates();
+  const sound = useSound({ status, setStatus, onError: setError });
   const currentSong = library.songs.find((s) => s.id === currentId) ?? null;
   const changeSpeed = (value: number) => {
     setSpeed(value);
@@ -207,12 +210,16 @@ function App() {
     run(async () => {
       let current = await api.getStatus();
       const list = await refreshPorts();
+      // O último SoundFont escolhido; sem ele (ou se sumiu), o som padrão do app.
       const soundfont = storage.get(LAST_SOUNDFONT);
-      if (soundfont && current.audio && !current.soundfont) {
-        current = await api.loadSoundfont(soundfont).catch(() => {
-          storage.set(LAST_SOUNDFONT, null);
-          return current;
-        });
+      if (current.audio && !current.soundfont) {
+        if (soundfont) {
+          current = await api.loadSoundfont(soundfont).catch(() => {
+            storage.set(LAST_SOUNDFONT, null);
+            return current;
+          });
+        }
+        if (!current.soundfont) current = await api.loadDefaultSoundfont().catch(() => current);
       }
       const port = storage.get(LAST_PORT);
       if (port && list.includes(port) && !current.midiPort) {
@@ -319,6 +326,30 @@ function App() {
       storage.set(LAST_SOUNDFONT, path);
       return next;
     });
+
+  const openSoundfont = (path: string) =>
+    run(async () => {
+      const next = await api.loadSoundfont(path);
+      storage.set(LAST_SOUNDFONT, path);
+      return next;
+    });
+
+  const resetSoundfont = () =>
+    run(async () => {
+      const next = await api.loadDefaultSoundfont();
+      storage.set(LAST_SOUNDFONT, null);
+      return next;
+    });
+
+  // O download pode demorar: não bloqueia o resto do app enquanto baixa.
+  const downloadSoundfont = (id: string) =>
+    sound
+      .download(id)
+      .then((path) => {
+        setNotice("SoundFont baixado. Carregando os timbres…");
+        return openSoundfont(path);
+      })
+      .catch((e) => setError(String(e)));
 
   const scoreFilter = {
     name: "Partituras (Guitar Pro, MusicXML, Capella)",
@@ -632,6 +663,13 @@ function App() {
               Versão {updates.info.latest} disponível
             </button>
           )}
+          {status?.presets?.length ? (
+            <TonePicker
+              sound={sound}
+              presets={status.presets}
+              onOpenSettings={() => setShowSettings(true)}
+            />
+          ) : null}
           <button
             className={keyboardReady && soundReady ? "status-pill ok" : "status-pill"}
             onClick={() => setShowSettings(true)}
@@ -1236,6 +1274,10 @@ function App() {
           onConnect={connect}
           onDisconnect={disconnect}
           onChooseSoundfont={chooseSoundfont}
+          onUseDefaultSoundfont={resetSoundfont}
+          onUseSoundfont={openSoundfont}
+          onDownloadSoundfont={downloadSoundfont}
+          sound={sound}
           onClose={() => setShowSettings(false)}
           updates={updates}
         />

@@ -2,6 +2,8 @@ import { useEffect } from "react";
 import type { Status } from "./api";
 import { Icon } from "./ui/Icon";
 import { UpdatesSection } from "./updates/UpdatesSection";
+import { SoundSection } from "./sound/SoundSection";
+import type { Sound } from "./sound/useSound";
 import type { Updates } from "./updates/useUpdates";
 
 interface Props {
@@ -14,21 +16,17 @@ interface Props {
   onConnect: () => void;
   onDisconnect: () => void;
   onChooseSoundfont: () => void;
+  onUseDefaultSoundfont: () => void;
+  onUseSoundfont: (path: string) => void;
+  onDownloadSoundfont: (id: string) => void;
+  sound: Sound;
   onClose: () => void;
   updates: Updates;
 }
 
-const fileName = (path: string) => path.split(/[\\/]/).pop() ?? path;
-
 /** Gaveta de ajustes: teclado MIDI e som. */
 export function Settings(p: Props) {
   const { status, onClose } = p;
-  const audio = status?.audio;
-  const latencyMs =
-    audio?.bufferFrames != null
-      ? ((audio.bufferFrames / audio.sampleRate) * 1000).toFixed(1)
-      : null;
-
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     document.addEventListener("keydown", onKey);
@@ -98,41 +96,15 @@ export function Settings(p: Props) {
           )}
         </section>
 
-        <section className="setting">
-          <div className="setting-title">
-            <Icon name="speaker" />
-            <h3>Som</h3>
-            <span className={audio && status?.soundfont ? "dot ok" : "dot"} />
-          </div>
-          {status?.audioError ? (
-            <p className="warn">Sem saída de áudio: {status.audioError}</p>
-          ) : audio ? (
-            <dl className="facts">
-              <dt>Saída</dt>
-              <dd>{audio.device}</dd>
-              <dt>Qualidade</dt>
-              <dd>{audio.sampleRate} Hz</dd>
-              <dt>Atraso</dt>
-              <dd>{latencyMs ? `${latencyMs} ms (buffer ${audio.bufferFrames})` : "automático"}</dd>
-            </dl>
-          ) : null}
-          <p className="muted">
-            O SoundFont define o timbre do piano e da reprodução. Para ouvir a banda, use um General
-            MIDI completo (ex.: FluidR3_GM).
-          </p>
-          {status?.soundfont && (
-            <p title={status.soundfont}>
-              <b>{fileName(status.soundfont)}</b>
-            </p>
-          )}
-          <button
-            className={status?.soundfont ? "" : "primary"}
-            onClick={p.onChooseSoundfont}
-            disabled={p.busy || !audio}
-          >
-            {status?.soundfont ? "Trocar SoundFont…" : "Escolher SoundFont…"}
-          </button>
-        </section>
+        <SoundSection
+          status={status}
+          sound={p.sound}
+          busy={p.busy}
+          onChooseFile={p.onChooseSoundfont}
+          onUseDefault={p.onUseDefaultSoundfont}
+          onUseFile={p.onUseSoundfont}
+          onDownload={p.onDownloadSoundfont}
+        />
 
         <UpdatesSection updates={p.updates} />
 

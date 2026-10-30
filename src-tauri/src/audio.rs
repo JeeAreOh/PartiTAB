@@ -19,6 +19,7 @@ use rustysynth::{SoundFont, Synthesizer, SynthesizerSettings};
 use serde::Serialize;
 
 use crate::midi::SynthMessage;
+use crate::sounds::{self, PresetInfo, SoundSettings};
 
 /// Buffer pedido ao dispositivo, em frames. A 48 kHz são ~5 ms.
 const PREFERRED_BUFFER_FRAMES: u32 = 256;
@@ -27,6 +28,16 @@ const MAX_POLYPHONY: usize = 128;
 pub enum AudioCommand {
     Midi(SynthMessage),
     SetSynth(Box<Synthesizer>),
+    /// Timbre, volume e reverb; valem também para os próximos SoundFonts.
+    SetSound(SoundSettings),
+}
+
+/// Aplica timbre (banco + programa), reverb e volume no canal do piano.
+fn apply_sound(synth: &mut Synthesizer, sound: &SoundSettings) {
+    synth.process_midi_message(0, 0xB0, 0x00, sound.bank.into());
+    synth.process_midi_message(0, 0xC0, sound.patch.into(), 0);
+    synth.process_midi_message(0, 0xB0, 0x5B, sound.reverb.into());
+    synth.set_master_volume(sound.master_volume());
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -87,19 +98,26 @@ impl AudioEngine {
     }
 
     /// Lê o SoundFont e troca o sintetizador. Bloqueia durante a leitura do
-    /// arquivo, então deve rodar fora da thread principal.
-    pub fn load_soundfont(&self, path: &Path) -> Result<(), String> {
+    /// arquivo, então deve rodar fora da thread principal. Devolve os
+    /// instrumentos do arquivo.
+    pub fn load_soundfont(&self, path: &Path) -> Result<Vec<PresetInfo>, String> {
         let file =
             File::open(path).map_err(|e| format!("Não foi possível abrir o arquivo: {e}"))?;
         let sound_font = SoundFont::new(&mut BufReader::new(file))
             .map_err(|e| format!("SoundFont inválido: {e:?}"))?;
+        let presets = sounds::presets(&sound_font);
         let mut settings = SynthesizerSettings::new(self.info.sample_rate as i32);
         settings.maximum_polyphony = MAX_POLYPHONY;
         let synth = Synthesizer::new(&Arc::new(sound_font), &settings)
             .map_err(|e| format!("Erro ao criar o sintetizador: {e:?}"))?;
         self.commands
             .send(AudioCommand::SetSynth(Box::new(synth)))
-            .map_err(|_| "A saída de áudio não está ativa".to_string())
+            .map_err(|_| "A saída de áudio não está ativa".to_string())?;
+        Ok(presets)
+    }
+
+    pub fn set_sound(&self, sound: SoundSettings) {
+        let _ = self.commands.send(AudioCommand::SetSound(sound));
     }
 }
 
@@ -157,6 +175,7 @@ where
 {
     let channels = config.channels as usize;
     let mut synth: Option<Box<Synthesizer>> = None;
+    let mut sound = SoundSettings::default();
     let mut left = vec![0f32; 4096];
     let mut right = vec![0f32; 4096];
 
@@ -168,7 +187,16 @@ where
                         s.process_midi_message(0, m.command.into(), m.data1.into(), m.data2.into());
                     }
                 }
-                AudioCommand::SetSynth(s) => synth = Some(s),
+                AudioCommand::SetSynth(mut s) => {
+                    apply_sound(&mut s, &sound);
+                    synth = Some(s);
+                }
+                AudioCommand::SetSound(next) => {
+                    sound = next;
+                    if let Some(s) = synth.as_mut() {
+                        apply_sound(s, &sound);
+                    }
+                }
             }
         }
 

@@ -9,6 +9,9 @@ const CLIENT_NAME: &str = "PartiTAB";
 /// tocar o próprio som e passa a funcionar só como controlador.
 const CC_LOCAL_CONTROL: u8 = 122;
 const CC_SUSTAIN: u8 = 64;
+/// Controladores que o teclado manda ao trocar de voz (seleção de banco,
+/// reverb e chorus). São ignorados: o timbre e o reverb vêm dos ajustes do app.
+const CC_IGNORED: [u8; 4] = [0x00, 0x20, 0x5B, 0x5D];
 
 /// Mensagem de canal pronta para `Synthesizer::process_midi_message`.
 /// Tudo vai para o canal 0 (piano); o canal original do teclado é ignorado.
@@ -49,8 +52,9 @@ pub enum KeyEvent {
 /// Traduz uma mensagem MIDI crua. Devolve a mensagem para o sintetizador (se
 /// houver) e o evento para a interface (se houver).
 ///
-/// Program Change é ignorado de propósito: trocar o timbre no teclado não deve
-/// trocar o piano do app. Mensagens de sistema (clock, active sensing) também.
+/// Program Change e seleção de banco são ignorados de propósito: trocar o
+/// timbre no teclado não deve trocar o piano do app. Mensagens de sistema
+/// (clock, active sensing) também.
 pub fn translate(msg: &[u8]) -> (Option<SynthMessage>, Option<KeyEvent>) {
     let (Some(&status), data1, data2) = (msg.first(), msg.get(1).copied(), msg.get(2).copied())
     else {
@@ -77,6 +81,7 @@ pub fn translate(msg: &[u8]) -> (Option<SynthMessage>, Option<KeyEvent>) {
             Some(SynthMessage::note_off(d1)),
             Some(KeyEvent::NoteOff { key: d1 }),
         ),
+        0xB0 if CC_IGNORED.contains(&d1) => (None, None),
         0xB0 => {
             let synth = Some(SynthMessage {
                 command: 0xB0,
@@ -218,6 +223,14 @@ mod tests {
         let (synth, event) = translate(&[0xB0, 7, 90]);
         assert!(synth.is_some());
         assert_eq!(event, None);
+    }
+
+    #[test]
+    fn bank_select_and_effect_sends_from_the_keyboard_are_ignored() {
+        for cc in [0x00, 0x20, 0x5B, 0x5D] {
+            assert_eq!(translate(&[0xB0, cc, 10]), (None, None));
+        }
+        assert!(translate(&[0xB0, 0x07, 100]).0.is_some());
     }
 
     #[test]

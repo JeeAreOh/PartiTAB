@@ -2016,3 +2016,189 @@ table.attempts {
 .align-start {
   align-self: flex-start;
 }
+
+/* ================================================================== timbres */
+
+.tone-label {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tone-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tone-volume,
+.sound-controls label {
+  display: grid;
+  grid-template-columns: 64px 1fr 34px;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.85rem;
+}
+
+.tone-volume input,
+.sound-controls input {
+  width: 100%;
+}
+
+.tone-list {
+  max-height: min(380px, 55vh);
+  overflow-y: auto;
+  margin: 0 -8px;
+  padding: 0 8px;
+}
+
+.tone-list h4 {
+  position: sticky;
+  top: 0;
+  margin: 0;
+  padding: 8px 0 4px;
+  background: var(--surface);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.tone-list ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.tone {
+  display: flex;
+  align-items: center;
+  border-radius: var(--radius-sm);
+}
+
+.tone:hover {
+  background: var(--hover);
+}
+
+.tone.on {
+  background: var(--accent-soft);
+}
+
+.tone-name {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  border: none;
+  background: none;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tone-name:hover:not(:disabled) {
+  background: none;
+}
+
+.tone.on .tone-name {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.tone-star {
+  border: none;
+  background: none;
+  padding: 4px 8px;
+  color: var(--muted);
+  opacity: 0;
+}
+
+.tone:hover .tone-star,
+.tone-star:focus-visible,
+.tone-star.on {
+  opacity: 1;
+}
+
+.tone-star.on {
+  color: #e0a100;
+}
+
+.tone-star:hover:not(:disabled) {
+  background: none;
+  color: #e0a100;
+}
+
+.sound-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sound-curve {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.85rem;
+}
+
+.sound-curve .segmented {
+  align-self: flex-start;
+}
+
+.sound-subtitle {
+  margin: 6px 0 0;
+  font-size: 0.85rem;
+}
+
+.sound-catalog {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sound-catalog li {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.sound-catalog li.on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.sound-item-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sound-item-text p {
+  margin: 2px 0 0;
+}
+
+.sound-item-text progress {
+  width: 100%;
+  height: 6px;
+  margin-top: 6px;
+  accent-color: var(--accent);
+}
+
+.sound-item-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  flex-shrink: 0;
+}

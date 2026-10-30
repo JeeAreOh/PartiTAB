@@ -43,7 +43,8 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "resources/collections/": "collections/"
+      "resources/collections/": "collections/",
+      "resources/soundfonts/": "soundfonts/"
     },
     "publisher": "Gefferson Oliveira",
     "shortDescription": "Leitor de partitura e prática de piano",
