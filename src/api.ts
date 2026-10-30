@@ -117,6 +117,8 @@ export interface Attempt {
   wrong: number;
   miss: number;
   completed: boolean;
+  /** Tempo da prática (ms); 0 nas gravadas antes de existir a medida. */
+  durationMs?: number;
   /** Detalhe por compasso e por nota (só ao gravar). */
   bars?: BarStat[];
   keys?: { key: number; notes: number; errors: number }[];
@@ -174,6 +176,7 @@ export const api = {
       listen<SoundDownload>("sound-download", (e) => handler(e.payload)),
   },
   playNote: (key: number, velocity: number) => invoke<void>("play_note", { key, velocity }),
+  playPedal: (down: boolean) => invoke<void>("play_pedal", { down }),
   readFile: (path: string) =>
     invoke<ArrayBuffer>("read_file", { path }).then((b) => new Uint8Array(b)),
   updates: {
@@ -181,6 +184,12 @@ export const api = {
     setToken: (token: string) => invoke<void>("update_set_token", { token }),
     check: () => invoke<UpdateInfo>("update_check"),
     install: (asset: UpdateAsset) => invoke<void>("update_install", { asset }),
+  },
+  backup: {
+    export: (path: string, settings: string) =>
+      invoke<{ files: number; bytes: number }>("backup_export", { path, settings }),
+    /** Restaura e devolve o JSON das preferências guardadas no backup. */
+    import: (path: string) => invoke<string>("backup_import", { path }),
   },
   openSearch: (url: string) => invoke<void>("open_search", { url }),
   onSearchDownload: (
@@ -201,6 +210,8 @@ export const api = {
     remove: (id: number) => invoke<void>("library_delete", { id }),
     recordAttempt: (attempt: Attempt) => invoke<Song>("library_record_attempt", { attempt }),
     attempts: (songId: number) => invoke<Attempt[]>("library_attempts", { songId }),
+    /** Todas as execuções desde `since` (ms), sem o detalhe por compasso. */
+    allAttempts: (since: number) => invoke<Attempt[]>("library_all_attempts", { since }),
     findCovers: (artist: string, title: string) =>
       invoke<CoverCandidate[]>("library_find_covers", { artist, title }),
     coverFromUrl: (id: number, url: string) => invoke<Song>("library_cover_from_url", { id, url }),

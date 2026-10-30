@@ -587,6 +587,8 @@ input[type="range"] {
 }
 
 /* O cursor do alphaTab fica acima de tudo; a partitura some sem perder o layout. */
+/* Com as notas caindo, a partitura (e o cursor dela) fica por baixo, invisível. */
+.workspace.falling > .score,
 .workspace.covered > .score,
 .workspace.covered > .stage,
 .workspace.covered > .video-card {
@@ -2201,4 +2203,272 @@ table.attempts {
   align-items: flex-end;
   gap: 4px;
   flex-shrink: 0;
+}
+
+/* ================================================================ sincronia */
+
+.calibration {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.calibration p {
+  margin: 0;
+}
+
+.beats {
+  display: flex;
+  gap: 4px;
+}
+
+.beats span {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--border);
+}
+
+.beats span.lead {
+  opacity: 0.55;
+}
+
+.beats span.on {
+  background: var(--accent);
+}
+
+.latency-manual {
+  display: grid;
+  grid-template-columns: 96px 1fr 56px;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.85rem;
+}
+
+.latency-manual input {
+  width: 100%;
+}
+
+/* ================================================================ gravação */
+
+.record-button {
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.85rem;
+}
+
+.record-dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--error);
+}
+
+.record-button.on {
+  color: var(--error);
+  border-color: var(--error);
+}
+
+.record-button.on .record-dot {
+  animation: record-pulse 1s ease-in-out infinite;
+}
+
+@keyframes record-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* ============================================================ notas caindo */
+
+.falling-notes {
+  position: absolute;
+  z-index: 2;
+  border-radius: var(--radius);
+  background: linear-gradient(#15151b, #22222b);
+  box-shadow: var(--shadow);
+}
+
+.disabled-field {
+  opacity: 0.5;
+}
+
+/* ================================================================ progresso */
+
+.progress-page {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 4px 4px 24px;
+  max-width: 980px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.progress-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.progress-head h2 {
+  font-size: 1.3rem;
+}
+
+.goal-select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.stat-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+}
+
+.stat-tile,
+.progress-card {
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 16px;
+}
+
+.stat-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.stat-tile.today {
+  flex-direction: row;
+  align-items: center;
+  gap: 14px;
+}
+
+.stat-tile.today > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.stat-tile .label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.stat-tile b {
+  font-size: 1.45rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.goal-ring .track {
+  fill: none;
+  stroke: var(--hover);
+  stroke-width: 6;
+}
+
+.goal-ring .fill {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 6;
+  stroke-linecap: round;
+}
+
+.goal-ring text {
+  fill: var(--text);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.progress-card h3 {
+  font-size: 0.95rem;
+  margin-bottom: 10px;
+}
+
+.days-chart {
+  position: relative;
+}
+
+.days-chart .grid {
+  stroke: var(--border);
+}
+
+.days-chart .axis {
+  fill: var(--muted);
+  font-size: 10px;
+}
+
+.days-chart .bar {
+  fill: var(--accent);
+  opacity: 0.85;
+}
+
+.days-chart .bar.on {
+  opacity: 1;
+}
+
+.days-chart .goal-line {
+  stroke: var(--muted);
+  stroke-dasharray: 4 4;
+}
+
+.improved {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.improved-row {
+  width: 100%;
+  justify-content: flex-start;
+  gap: 12px;
+  padding: 8px;
+  border: none;
+  background: none;
+  border-radius: var(--radius-sm);
+  text-align: left;
+}
+
+.improved-title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.improved-title b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.improved-score {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.improved-score .delta {
+  color: var(--ok);
+  font-weight: 600;
+  font-size: 0.85rem;
 }

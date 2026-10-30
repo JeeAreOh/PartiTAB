@@ -3,6 +3,8 @@ import type { Status } from "./api";
 import { Icon } from "./ui/Icon";
 import { UpdatesSection } from "./updates/UpdatesSection";
 import { SoundSection } from "./sound/SoundSection";
+import { LatencySection } from "./practice/LatencySection";
+import { BackupSection } from "./library/BackupSection";
 import type { Sound } from "./sound/useSound";
 import type { Updates } from "./updates/useUpdates";
 
@@ -20,6 +22,11 @@ interface Props {
   onUseSoundfont: (path: string) => void;
   onDownloadSoundfont: (id: string) => void;
   sound: Sound;
+  latency: number;
+  onLatency: (ms: number) => void;
+  registerTap: (handler: ((key: number) => void) | null) => void;
+  onError: (message: string) => void;
+  onNotice: (message: string) => void;
   onClose: () => void;
   updates: Updates;
 }
@@ -105,6 +112,10 @@ export function Settings(p: Props) {
           onUseFile={p.onUseSoundfont}
           onDownload={p.onDownloadSoundfont}
         />
+
+        <LatencySection latency={p.latency} onChange={p.onLatency} registerTap={p.registerTap} />
+
+        <BackupSection onError={p.onError} onNotice={p.onNotice} />
 
         <UpdatesSection updates={p.updates} />
 

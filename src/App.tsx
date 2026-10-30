@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { api, type Song, type Status } from "./api";
 import { Keyboard } from "./Keyboard";
-import { keyName, useScore } from "./useScore";
+import { DEFAULT_DISPLAY, keyName, useScore, type Display } from "./useScore";
 import { Library } from "./library/Library";
 import { Cover } from "./library/Cover";
 import { parsePrefs, readMetadata, useLibrary, type SongPrefs } from "./library/useLibrary";
@@ -13,6 +13,12 @@ import { ErrorOverlay } from "./practice/ErrorOverlay";
 import { barsToRange, rangeToBars, worstSegments, type Segment } from "./practice/drill";
 import type { BarStat } from "./practice/engine";
 import { ReadingTrainer } from "./reading/ReadingTrainer";
+import { Progress } from "./progress/Progress";
+import { parseLatency } from "./practice/latency";
+import { useRecorder } from "./practice/useRecorder";
+import { noteCount, toMidiFile } from "./practice/recording";
+import { FallingNotes } from "./practice/FallingNotes";
+import { fingerNotes } from "./practice/fingering";
 import { Settings } from "./Settings";
 import { useUpdates } from "./updates/useUpdates";
 import { useSound } from "./sound/useSound";
@@ -31,6 +37,31 @@ const LAST_SOUNDFONT = "partitab.soundfont";
 /** Caminho da última partitura (versões antes da biblioteca). */
 const LAST_SCORE = "partitab.score";
 const LAST_SONG = "partitab.songId";
+/** Atraso calibrado entre o som e o toque (ms). */
+const LATENCY = "partitab.latencyMs";
+/** Como a partitura aparece: tamanho, layout, notas caindo e dedilhado. */
+const DISPLAY = "partitab.display";
+
+interface ViewPrefs extends Display {
+  falling: boolean;
+  fingering: boolean;
+}
+
+function readViewPrefs(): ViewPrefs {
+  const fallback = { ...DEFAULT_DISPLAY, falling: false, fingering: false };
+  try {
+    const raw = JSON.parse(storage.get(DISPLAY) ?? "{}");
+    const scale = Number(raw.scale);
+    return {
+      scale: Number.isFinite(scale) && scale >= 0.5 && scale <= 2 ? scale : fallback.scale,
+      layout: raw.layout === "horizontal" ? "horizontal" : "page",
+      falling: raw.falling === true,
+      fingering: raw.fingering === true,
+    };
+  } catch {
+    return fallback;
+  }
+}
 /** Coleções já trazidas para a biblioteca na primeira abertura. */
 const COLLECTIONS_DONE = "partitab.collections";
 const MOUSE_VELOCITY = 90;
@@ -100,7 +131,11 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [currentId, setCurrentId] = useState<number | null>(null);
-  const [view, setView] = useState<"library" | "score" | "reading" | "search">("score");
+  const [view, setView] = useState<"library" | "score" | "reading" | "progress" | "search">(
+    "score",
+  );
+  /** Muda a cada prática gravada (o painel de progresso recarrega). */
+  const [practiceVersion, setPracticeVersion] = useState(0);
   /** Erros por compasso nas últimas execuções da música aberta. */
   const [errorBars, setErrorBars] = useState<Record<number, BarStat>>({});
   const [showErrors, setShowErrors] = useState(false);
@@ -125,7 +160,20 @@ function App() {
     score.setSpeed(value / 100);
   };
   const onMasteredRef = useRef<() => void>(() => undefined);
+  const [viewPrefs, setViewPrefs] = useState<ViewPrefs>(readViewPrefs);
+  const changeView = (patch: Partial<ViewPrefs>) =>
+    setViewPrefs((v) => {
+      const next = { ...v, ...patch };
+      storage.set(DISPLAY, JSON.stringify(next));
+      return next;
+    });
+  const [latency, setLatency] = useState(() => parseLatency(storage.get(LATENCY)));
+  const changeLatency = useCallback((ms: number) => {
+    setLatency(ms);
+    storage.set(LATENCY, String(ms));
+  }, []);
   const practice = usePractice({
+    latencyMs: latency,
     apiRef: score.apiRef,
     timeline: score.state.timeline,
     tempo: score.state.tempo,
@@ -143,6 +191,11 @@ function App() {
   const readingHandler = useRef<((key: number) => void) | null>(null);
   const registerReading = useCallback((h: ((key: number) => void) | null) => {
     readingHandler.current = h;
+  }, []);
+  /** Durante a calibração do atraso, as notas do teclado vão para ela. */
+  const calibrationHandler = useRef<((key: number) => void) | null>(null);
+  const registerCalibration = useCallback((h: ((key: number) => void) | null) => {
+    calibrationHandler.current = h;
   }, []);
   onNoteRef.current = practice.onNote;
 
@@ -173,6 +226,24 @@ function App() {
       else next.set(key, velocity);
       return next;
     });
+
+  // Tamanho, layout e dedilhado da partitura.
+  const { scale, layout, fingering, falling } = viewPrefs;
+  useEffect(() => {
+    score.setDisplay({ scale, layout });
+  }, [scale, layout, score.setDisplay]);
+  useEffect(() => {
+    score.setFingering(fingering);
+  }, [fingering, score.setFingering]);
+  const timeline = score.state.timeline;
+  const fingerMap = useMemo(
+    () => (fingering ? fingerNotes(timeline.flatMap((s) => s.notes)) : null),
+    [fingering, timeline],
+  );
+
+  const recorder = useRecorder({ apiRef: score.apiRef, onKey: setKey });
+  const captureRef = useRef(recorder.capture);
+  captureRef.current = recorder.capture;
 
   /** Abre uma música da biblioteca, com o arranjo e a faixa da última vez. */
   const openSong = useCallback(
@@ -250,9 +321,11 @@ function App() {
 
   useEffect(() => {
     const unlisten = api.onKey((e) => {
+      captureRef.current(e);
       if (e.type === "noteOn") {
         setKey(e.key, e.velocity);
-        if (readingHandler.current) readingHandler.current(e.key);
+        if (calibrationHandler.current) calibrationHandler.current(e.key);
+        else if (readingHandler.current) readingHandler.current(e.key);
         else onNoteRef.current(e.key);
       } else if (e.type === "noteOff") setKey(e.key, null);
       else setSustain(e.down);
@@ -442,6 +515,21 @@ function App() {
       }
     });
 
+  const exportRecording = () =>
+    run(async () => {
+      if (!recorder.take) return;
+      const name = currentSong?.title ?? "Gravação";
+      const path = await save({
+        title: "Exportar a gravação em MIDI",
+        defaultPath: `${name} - minha gravação.mid`,
+        filters: [{ name: "MIDI", extensions: ["mid"] }],
+      });
+      if (path) {
+        await api.writeFile(path, toMidiFile(recorder.take, name));
+        setNotice(`Gravação salva em ${fileName(path)}`);
+      }
+    });
+
   // ---------------------------------------------- mapa de erros e trechos
 
   const loadErrors = useCallback((songId: number) => {
@@ -501,9 +589,11 @@ function App() {
 
   // Ao terminar (ou parar) uma prática com notas avaliadas, grava na biblioteca.
   const wasRunning = useRef(false);
+  const startedAt = useRef(0);
   const p0 = practice.state;
   useEffect(() => {
     const ended = wasRunning.current && !p0.running;
+    if (!wasRunning.current && p0.running) startedAt.current = performance.now();
     wasRunning.current = p0.running;
     const t = p0.tally;
     if (!ended || !currentSong || t.hit + t.early + t.late + t.wrong + t.miss === 0) return;
@@ -525,10 +615,14 @@ function App() {
         wrong: t.wrong,
         miss: t.miss,
         completed: p0.finished,
+        durationMs: Math.round(performance.now() - startedAt.current),
         bars: Object.entries(p0.stats.bars).map(([bar, b]) => ({ bar: Number(bar), ...b })),
         keys: Object.entries(p0.stats.keys).map(([key, k]) => ({ key: Number(key), ...k })),
       })
-      .then(() => loadErrors(songId));
+      .then(() => {
+        loadErrors(songId);
+        setPracticeVersion((v) => v + 1);
+      });
     // Só reage ao fim da prática.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [p0.running]);
@@ -634,6 +728,7 @@ function App() {
               ["library", "library", "Biblioteca"],
               ["score", "score", "Partitura"],
               ["reading", "reading", "Leitura"],
+              ["progress", "heat", "Progresso"],
               ["search", "search", "Buscar"],
             ] as const
           ).map(([v, icon, label]) => (
@@ -738,6 +833,56 @@ function App() {
                 {formatTime(state.position)}
                 <span className="muted"> / {formatTime(state.duration)}</span>
               </span>
+              <button
+                className={recorder.recording ? "record-button on" : "record-button"}
+                onClick={recorder.recording ? recorder.stop : recorder.start}
+                aria-label={recorder.recording ? "Parar a gravação" : "Gravar o que você toca"}
+                title={recorder.recording ? "Parar a gravação" : "Gravar o que você toca"}
+              >
+                <span className="record-dot" />
+                {recorder.recording && formatTime(recorder.elapsed)}
+              </button>
+              {recorder.take && !recorder.recording && (
+                <Popover
+                  label={
+                    <>
+                      <Icon name={recorder.playing ? "pause" : "play"} size={14} />
+                      Gravação
+                    </>
+                  }
+                  title="Ouvir ou exportar a última gravação"
+                  active={recorder.playing}
+                >
+                  {(close) => (
+                    <div className="form">
+                      <p className="muted small">
+                        {noteCount(recorder.take!)} notas · {formatTime(recorder.take!.durationMs)}.
+                        Ao ouvir, o cursor da partitura acompanha o que você tocou.
+                      </p>
+                      <div className="row wrap">
+                        <button
+                          className="primary"
+                          onClick={recorder.playing ? recorder.stopPlayback : recorder.play}
+                        >
+                          {recorder.playing ? "Parar" : "Ouvir"}
+                        </button>
+                        <button onClick={exportRecording} disabled={busy}>
+                          Exportar .mid…
+                        </button>
+                        <button
+                          className="link"
+                          onClick={() => {
+                            recorder.discard();
+                            close();
+                          }}
+                        >
+                          Descartar
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </Popover>
+              )}
             </div>
 
             <div className="tools">
@@ -856,6 +1001,76 @@ function App() {
                       Ouvir só esta faixa
                     </label>
                   )}
+                </div>
+              </Popover>
+
+              <Popover
+                label={
+                  <>
+                    <Icon name="score" size={17} />
+                    Exibir
+                  </>
+                }
+                title="Pauta ou notas caindo, tamanho e dedilhado"
+                active={falling || fingering}
+                align="right"
+              >
+                <div className="form">
+                  <div className="segmented" role="radiogroup" aria-label="Visão">
+                    <button
+                      role="radio"
+                      aria-checked={!falling}
+                      className={!falling ? "on" : ""}
+                      onClick={() => changeView({ falling: false })}
+                    >
+                      Pauta
+                    </button>
+                    <button
+                      role="radio"
+                      aria-checked={falling}
+                      className={falling ? "on" : ""}
+                      onClick={() => changeView({ falling: true })}
+                    >
+                      Notas caindo
+                    </button>
+                  </div>
+                  <label className={falling ? "disabled-field" : undefined}>
+                    Tamanho da partitura
+                    <span className="row">
+                      <input
+                        type="range"
+                        min={0.6}
+                        max={1.6}
+                        step={0.1}
+                        value={scale}
+                        disabled={falling}
+                        onChange={(e) => changeView({ scale: Number(e.target.value) })}
+                        onDoubleClick={() => changeView({ scale: 1 })}
+                        aria-label="Tamanho da partitura"
+                      />
+                      <span className="muted small">{Math.round(scale * 100)}%</span>
+                    </span>
+                  </label>
+                  <label className={falling ? "disabled-field" : undefined}>
+                    Layout
+                    <select
+                      value={layout}
+                      disabled={falling}
+                      onChange={(e) => changeView({ layout: e.target.value as Display["layout"] })}
+                    >
+                      <option value="page">Página (rola para baixo)</option>
+                      <option value="horizontal">Uma linha (rola para o lado)</option>
+                    </select>
+                  </label>
+                  <label className="check">
+                    <input
+                      type="checkbox"
+                      checked={fingering}
+                      onChange={(e) => changeView({ fingering: e.target.checked })}
+                    />
+                    Dedilhado sugerido
+                    <span className="muted">1 = polegar … 5 = mínimo</span>
+                  </label>
                 </div>
               </Popover>
 
@@ -1136,7 +1351,13 @@ function App() {
         </div>
       )}
 
-      <div className={view === "score" ? "workspace" : "workspace covered"}>
+      <div
+        className={[
+          "workspace",
+          view === "score" ? "" : "covered",
+          falling && state.tracks.length > 0 ? "falling" : "",
+        ].join(" ")}
+      >
         <section className="score" ref={score.scrollRef}>
           {state.tracks.length === 0 && (
             <div className="empty">
@@ -1167,6 +1388,18 @@ function App() {
             )}
           </div>
         </section>
+
+        {falling && view === "score" && state.tracks.length > 0 && (
+          <FallingNotes
+            apiRef={score.apiRef}
+            anchorRef={score.scrollRef}
+            timeline={timeline}
+            tempo={state.tempo}
+            speed={speed / 100}
+            hands={practicing ? p.hands : null}
+            fingering={fingerMap}
+          />
+        )}
 
         {video && (
           <VideoPanel
@@ -1200,11 +1433,13 @@ function App() {
             expected={p.running && p.mode === "wait" ? p.waiting : state.sounding}
             flashes={p.flashes}
             onPress={(k) => {
+              recorder.capture({ type: "noteOn", key: k, velocity: MOUSE_VELOCITY });
               setKey(k, MOUSE_VELOCITY);
               api.playNote(k, MOUSE_VELOCITY);
               practice.onNote(k);
             }}
             onRelease={(k) => {
+              recorder.capture({ type: "noteOff", key: k });
               setKey(k, null);
               api.playNote(k, 0);
             }}
@@ -1237,6 +1472,16 @@ function App() {
         {view === "reading" && (
           <div className="layer">
             <ReadingTrainer registerNoteHandler={registerReading} onError={setError} />
+          </div>
+        )}
+
+        {view === "progress" && (
+          <div className="layer">
+            <Progress
+              songs={library.songs}
+              version={practiceVersion}
+              onOpenSong={(song) => run(() => openSong(song))}
+            />
           </div>
         )}
 
@@ -1278,6 +1523,11 @@ function App() {
           onUseSoundfont={openSoundfont}
           onDownloadSoundfont={downloadSoundfont}
           sound={sound}
+          latency={latency}
+          onLatency={changeLatency}
+          registerTap={registerCalibration}
+          onError={setError}
+          onNotice={setNotice}
           onClose={() => setShowSettings(false)}
           updates={updates}
         />

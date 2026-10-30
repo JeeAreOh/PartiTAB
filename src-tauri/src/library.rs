@@ -80,6 +80,11 @@ const MIGRATIONS: &[&str] = &[
     -- Capa do álbum: caminho da imagem na pasta capas (NULL = capa gerada).
     ALTER TABLE songs ADD COLUMN cover TEXT;
 ",
+    "
+    -- Quanto durou cada prática (0 nas anteriores a esta versão).
+    ALTER TABLE attempts ADD COLUMN duration_ms INTEGER NOT NULL DEFAULT 0;
+    CREATE INDEX attempts_played_at ON attempts(played_at);
+",
 ];
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -149,6 +154,8 @@ pub struct Attempt {
     pub wrong: i64,
     pub miss: i64,
     pub completed: bool,
+    #[serde(default)]
+    pub duration_ms: i64,
     /// Detalhe por compasso e por nota (só na gravação; a listagem não traz).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub bars: Vec<BarStat>,
@@ -213,8 +220,28 @@ pub struct CollectionResult {
 
 pub struct Library {
     conn: Mutex<Connection>,
+    dir: PathBuf,
     files: PathBuf,
     covers: PathBuf,
+}
+
+const DB_FILE: &str = "partitab.db";
+const FILES_DIR: &str = "partituras";
+const COVERS_DIR: &str = "capas";
+/// Cópia do que havia antes da última restauração de backup.
+const PREVIOUS_DIR: &str = "antes-da-restauracao";
+
+fn open_connection(path: &Path) -> Result<Connection> {
+    let mut conn = Connection::open(path).map_err(err)?;
+    conn.pragma_update(None, "foreign_keys", true)
+        .map_err(err)?;
+    migrate(&mut conn)?;
+    Ok(conn)
+}
+
+/// Só o nome do arquivo de um caminho gravado (aceita `/` e `\\`).
+fn stored_name(path: &str) -> &str {
+    path.rsplit(['/', '\\']).next().unwrap_or(path)
 }
 
 type Result<T> = std::result::Result<T, String>;
@@ -264,19 +291,107 @@ fn song_from_row(r: &Row) -> rusqlite::Result<Song> {
 impl Library {
     /// Abre (ou cria) a biblioteca em `dir`: `partitab.db` e a pasta `partituras`.
     pub fn open(dir: &Path) -> Result<Self> {
-        let files = dir.join("partituras");
+        let files = dir.join(FILES_DIR);
         fs::create_dir_all(&files).map_err(err)?;
-        let covers = dir.join("capas");
+        let covers = dir.join(COVERS_DIR);
         fs::create_dir_all(&covers).map_err(err)?;
-        let mut conn = Connection::open(dir.join("partitab.db")).map_err(err)?;
-        conn.pragma_update(None, "foreign_keys", true)
-            .map_err(err)?;
-        migrate(&mut conn)?;
+        let conn = open_connection(&dir.join(DB_FILE))?;
         Ok(Self {
             conn: Mutex::new(conn),
+            dir: dir.to_path_buf(),
             files,
             covers,
         })
+    }
+
+    /// Pasta da biblioteca (banco, partituras e capas).
+    pub fn dir(&self) -> &Path {
+        &self.dir
+    }
+
+    /// Cópia consistente do banco em `target` (para o backup).
+    pub fn export_db(&self, target: &Path) -> Result<()> {
+        let _ = fs::remove_file(target);
+        let conn = self.conn.lock().unwrap();
+        conn.execute("VACUUM INTO ?1", [target.to_string_lossy()])
+            .map_err(err)?;
+        Ok(())
+    }
+
+    /// Substitui a biblioteca pelo conteúdo de `staging` (banco, partituras e
+    /// capas de um backup). O que havia antes fica em `antes-da-restauracao`.
+    pub fn restore_from(&self, staging: &Path) -> Result<()> {
+        // Prepara o banco restaurado: versão, migrações e caminhos desta máquina.
+        {
+            let staged = staging.join(DB_FILE);
+            let check = Connection::open(&staged).map_err(err)?;
+            let version: usize = check
+                .pragma_query_value(None, "user_version", |r| r.get(0))
+                .map_err(err)?;
+            drop(check);
+            if version > MIGRATIONS.len() {
+                return Err("O backup é de uma versão mais nova do PartiTAB. Atualize o app antes de restaurar.".into());
+            }
+            let conn = open_connection(&staged)?;
+            let rows: Vec<(i64, String, Option<String>)> = {
+                let mut stmt = conn
+                    .prepare("SELECT id, stored_path, cover FROM songs")
+                    .map_err(err)?;
+                stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+                    .map_err(err)?
+                    .collect::<rusqlite::Result<_>>()
+                    .map_err(err)?
+            };
+            for (id, path, cover) in rows {
+                let path = self.files.join(stored_name(&path));
+                let cover = cover.map(|c| self.covers.join(stored_name(&c)));
+                conn.execute(
+                    "UPDATE songs SET stored_path = ?1, cover = ?2 WHERE id = ?3",
+                    params![
+                        path.to_string_lossy(),
+                        cover.map(|c| c.to_string_lossy().into_owned()),
+                        id
+                    ],
+                )
+                .map_err(err)?;
+            }
+        }
+        for sub in [FILES_DIR, COVERS_DIR] {
+            fs::create_dir_all(staging.join(sub)).map_err(err)?;
+        }
+
+        let mut conn = self.conn.lock().unwrap();
+        // Fecha o banco atual para poder mover o arquivo.
+        *conn = Connection::open_in_memory().map_err(err)?;
+        let previous = self.dir.join(PREVIOUS_DIR);
+        let _ = fs::remove_dir_all(&previous);
+        fs::create_dir_all(&previous).map_err(err)?;
+        let names = [DB_FILE, FILES_DIR, COVERS_DIR];
+        let swap = || -> Result<()> {
+            for name in names {
+                let current = self.dir.join(name);
+                if current.exists() {
+                    fs::rename(&current, previous.join(name)).map_err(err)?;
+                }
+            }
+            for name in names {
+                fs::rename(staging.join(name), self.dir.join(name)).map_err(err)?;
+            }
+            Ok(())
+        };
+        let result = swap();
+        if result.is_err() {
+            // Desfaz: volta o que havia antes.
+            for name in names {
+                if previous.join(name).exists() {
+                    let _ = fs::remove_dir_all(self.dir.join(name));
+                    let _ = fs::remove_file(self.dir.join(name));
+                    let _ = fs::rename(previous.join(name), self.dir.join(name));
+                }
+            }
+        }
+        *conn = open_connection(&self.dir.join(DB_FILE))?;
+        result
     }
 
     /// Copia o arquivo para a biblioteca. O mesmo conteúdo importado de novo
@@ -548,8 +663,8 @@ impl Library {
         let tx = conn.transaction().map_err(err)?;
         tx.execute(
             "INSERT INTO attempts (song_id, played_at, mode, hands, track, level, speed, score,
-                                   accuracy, hit, early, late, wrong, miss, completed)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+                                   accuracy, hit, early, late, wrong, miss, completed, duration_ms)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
             params![
                 a.song_id,
                 now_ms(),
@@ -565,7 +680,8 @@ impl Library {
                 a.late,
                 a.wrong,
                 a.miss,
-                a.completed
+                a.completed,
+                a.duration_ms.max(0)
             ],
         )
         .map_err(err)?;
@@ -690,15 +806,25 @@ impl Library {
 
     /// Execuções da música, da mais recente para a mais antiga.
     pub fn attempts(&self, song_id: i64) -> Result<Vec<Attempt>> {
+        self.query_attempts("song_id = ?1", song_id)
+    }
+
+    /// Execuções de todas as músicas desde `since` (ms), da mais recente para a
+    /// mais antiga (alimenta o painel de progresso).
+    pub fn all_attempts(&self, since: i64) -> Result<Vec<Attempt>> {
+        self.query_attempts("played_at >= ?1", since)
+    }
+
+    fn query_attempts(&self, filter: &str, value: i64) -> Result<Vec<Attempt>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn
-            .prepare(
+            .prepare(&format!(
                 "SELECT id, song_id, played_at, mode, hands, track, level, speed, score, accuracy,
-                        hit, early, late, wrong, miss, completed
-                 FROM attempts WHERE song_id = ?1 ORDER BY played_at DESC, id DESC",
-            )
+                        hit, early, late, wrong, miss, completed, duration_ms
+                 FROM attempts WHERE {filter} ORDER BY played_at DESC, id DESC"
+            ))
             .map_err(err)?;
-        stmt.query_map([song_id], |r| {
+        stmt.query_map([value], |r| {
             Ok(Attempt {
                 id: r.get(0)?,
                 song_id: r.get(1)?,
@@ -716,6 +842,7 @@ impl Library {
                 wrong: r.get(13)?,
                 miss: r.get(14)?,
                 completed: r.get(15)?,
+                duration_ms: r.get(16)?,
                 bars: Vec::new(),
                 keys: Vec::new(),
             })
@@ -781,6 +908,7 @@ mod tests {
             wrong: 0,
             miss: 0,
             completed,
+            duration_ms: 60_000,
             bars: Vec::new(),
             keys: Vec::new(),
         }
@@ -1062,5 +1190,21 @@ mod tests {
         }
         let lib = Library::open(dir.path()).unwrap();
         assert_eq!(lib.list().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn all_attempts_include_duration_for_the_progress_panel() {
+        let (_dir, lib, src) = setup();
+        let a = lib.import(&src, None, None).unwrap();
+        lib.record_attempt(&attempt(a.id, 70, true)).unwrap();
+        lib.record_attempt(&attempt(a.id, 90, true)).unwrap();
+        let all = lib.all_attempts(0).unwrap();
+        assert_eq!(all.len(), 2);
+        assert_eq!(all[0].score, 90);
+        assert!(
+            all.iter()
+                .all(|x| x.duration_ms == 60_000 && x.played_at > 0)
+        );
+        assert!(lib.all_attempts(i64::MAX).unwrap().is_empty());
     }
 }

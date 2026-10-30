@@ -10,6 +10,18 @@ const NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 export const isBlack = (key: number) => BLACK.has(key % 12);
 export const noteName = (key: number) => `${NAMES[key % 12]}${Math.floor(key / 12) - 1}`;
 
+const WHITES: number[] = [];
+for (let k = FIRST_KEY; k <= LAST_KEY; k++) if (!isBlack(k)) WHITES.push(k);
+
+/** Posição e largura da tecla, em % da largura útil do teclado. */
+export function keyGeometry(key: number): { left: number; width: number } {
+  const whiteWidth = 100 / WHITES.length;
+  const whitesBefore = WHITES.filter((w) => w < key).length;
+  return isBlack(key)
+    ? { left: whitesBefore * whiteWidth - whiteWidth * 0.3, width: whiteWidth * 0.6 }
+    : { left: whitesBefore * whiteWidth, width: whiteWidth };
+}
+
 interface Props {
   /** Teclas pressionadas → velocidade (1–127). */
   pressed: Map<number, number>;
@@ -25,7 +37,6 @@ export function Keyboard({ pressed, expected, flashes, onPress, onRelease }: Pro
   const mouseKey = useRef<number | null>(null);
   const whites: number[] = [];
   for (let k = FIRST_KEY; k <= LAST_KEY; k++) if (!isBlack(k)) whites.push(k);
-  const whiteWidth = 100 / whites.length;
 
   const press = (key: number) => {
     if (mouseKey.current === key) return;
@@ -68,7 +79,7 @@ export function Keyboard({ pressed, expected, flashes, onPress, onRelease }: Pro
       {Array.from({ length: LAST_KEY - FIRST_KEY + 1 }, (_, i) => FIRST_KEY + i)
         .filter(isBlack)
         .map((k) => {
-          const whitesBefore = whites.filter((w) => w < k).length;
+          const { left, width } = keyGeometry(k);
           const props = keyProps(k);
           return (
             <div
@@ -77,8 +88,8 @@ export function Keyboard({ pressed, expected, flashes, onPress, onRelease }: Pro
               {...props}
               style={{
                 ...props.style,
-                left: `${whitesBefore * whiteWidth - whiteWidth * 0.3}%`,
-                width: `${whiteWidth * 0.6}%`,
+                left: `${left}%`,
+                width: `${width}%`,
               }}
             />
           );

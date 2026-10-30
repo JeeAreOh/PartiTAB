@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as alphaTab from "@coderline/alphatab";
+import { fingerNotes } from "./practice/fingering";
 import {
   TempoMap,
   buildTimeline,
+  handOf,
   removeHandNotes,
   type HandChoice,
   type Step,
@@ -45,6 +47,14 @@ export interface ScoreInfo {
   artist: string;
   roles: Roles;
 }
+
+/** Como a partitura é desenhada: tamanho e páginas ou uma linha contínua. */
+export interface Display {
+  scale: number;
+  layout: "page" | "horizontal";
+}
+
+export const DEFAULT_DISPLAY: Display = { scale: 1, layout: "page" };
 
 export const keyName = (k: Key) => PITCH_NAMES[k.tonic] + (k.minor ? "m" : "");
 
@@ -110,6 +120,7 @@ export function useScore(onError: (message: string) => void) {
   const mediaRef = useRef<MediaHandler | null>(null);
   const syncRef = useRef<SyncPoint[]>([]);
   const rangeRef = useRef<{ startTick: number; endTick: number } | null>(null);
+  const fingeringRef = useRef(false);
   const errorRef = useRef(onError);
   errorRef.current = onError;
   const [state, setState] = useState<ScoreState>(EMPTY);
@@ -223,6 +234,7 @@ export function useScore(onError: (message: string) => void) {
     if (index === null || !score.tracks[index] || score.tracks[index].isPercussion) {
       index = defaultTrack(sourceTracks);
     }
+    if (fingeringRef.current && index !== null) annotateFingering(score, index);
     trackRef.current = index;
     optionsRef.current = options;
     bandShiftRef.current = arrangement?.shift ?? 0;
@@ -363,6 +375,27 @@ export function useScore(onError: (message: string) => void) {
     if (solo && track !== null) api.changeTrackSolo([score.tracks[track]], true);
   }, []);
 
+  /** Tamanho e layout da partitura. */
+  const setDisplay = useCallback((display: Display) => {
+    const api = apiRef.current;
+    if (!api) return;
+    api.settings.display.scale = display.scale;
+    api.settings.display.layoutMode =
+      display.layout === "page" ? alphaTab.LayoutMode.Page : alphaTab.LayoutMode.Horizontal;
+    api.updateSettings();
+    if (api.score) api.render();
+  }, []);
+
+  /** Mostra (ou tira) o dedilhado sugerido sobre as notas da faixa. */
+  const setFingering = useCallback(
+    (on: boolean) => {
+      if (fingeringRef.current === on) return;
+      fingeringRef.current = on;
+      if (bytesRef.current) show(optionsRef.current, trackRef.current);
+    },
+    [show],
+  );
+
   const loadSoundFont = useCallback((data: Uint8Array) => {
     apiRef.current?.loadSoundFont(data, false);
   }, []);
@@ -392,6 +425,8 @@ export function useScore(onError: (message: string) => void) {
     setSolo,
     setMutedHands,
     loadSoundFont,
+    setDisplay,
+    setFingering,
     ...controls,
   };
 }
@@ -416,6 +451,49 @@ function attachMedia(api: alphaTab.AlphaTabApi, handler: MediaHandler | null) {
     | Partial<alphaTab.synth.IExternalMediaSynthOutput>
     | undefined;
   if (handler && output && "updatePosition" in output) output.handler = handler;
+}
+
+/**
+ * Escreve o dedilhado sugerido como texto acima de cada tempo da faixa
+ * (acordes de cima para baixo). Não muda notas nem a reprodução.
+ */
+function annotateFingering(score: alphaTab.model.Score, trackIndex: number) {
+  const track = score.tracks[trackIndex];
+  const items: { beat: alphaTab.model.Beat; key: number; hand: "right" | "left"; tick: number }[] =
+    [];
+  for (const staff of track.staves) {
+    for (const bar of staff.bars) {
+      for (const voice of bar.voices) {
+        for (const beat of voice.beats) {
+          for (const note of beat.notes) {
+            if (note.isTieDestination) continue;
+            const key = note.realValue;
+            items.push({
+              beat,
+              key,
+              hand: handOf(staff.index, track.staves.length, key),
+              tick: beat.absolutePlaybackStart,
+            });
+          }
+        }
+      }
+    }
+  }
+  const fingers = fingerNotes(items);
+  const byBeat = new Map<alphaTab.model.Beat, { key: number; finger: number }[]>();
+  for (const it of items) {
+    const finger = fingers.get(`${it.tick}:${it.key}`);
+    if (!finger) continue;
+    byBeat.set(it.beat, [...(byBeat.get(it.beat) ?? []), { key: it.key, finger }]);
+  }
+  for (const [beat, list] of byBeat) {
+    const text = list
+      .sort((a, b) => b.key - a.key)
+      .map((f) => f.finger)
+      .join(" ");
+    // Texto que a partitura já tinha (ex.: "Allegro") fica depois do dedilhado.
+    beat.text = beat.text ? `${text} – ${beat.text}` : text;
+  }
 }
 
 function trackInfos(score: alphaTab.model.Score): TrackInfo[] {

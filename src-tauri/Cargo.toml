@@ -29,6 +29,7 @@ rusqlite = { version = "0.37", features = ["bundled"] }
 sha2 = "0.10"
 ureq = "3"
 tauri-plugin-opener = "2"
+zip = { version = "2", default-features = false, features = ["deflate"] }
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

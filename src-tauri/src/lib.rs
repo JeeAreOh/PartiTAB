@@ -1,4 +1,5 @@
 mod audio;
+mod backup;
 mod covers;
 mod library;
 mod midi;
@@ -243,6 +244,38 @@ impl LibraryState {
     }
 }
 
+/// Salva o backup da biblioteca (e das preferências da interface) em `path`.
+#[tauri::command]
+async fn backup_export(
+    app: AppHandle,
+    path: String,
+    settings: String,
+) -> Result<backup::BackupSummary, String> {
+    let version = app.package_info().version.to_string();
+    tauri::async_runtime::spawn_blocking(move || {
+        let lib = app.state::<LibraryState>();
+        backup::export(lib.get()?, std::path::Path::new(&path), &settings, &version)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Restaura um backup; devolve as preferências da interface que ele guardava.
+#[tauri::command]
+async fn backup_import(app: AppHandle, path: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let lib = app.state::<LibraryState>();
+        backup::import(lib.get()?, std::path::Path::new(&path))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+fn library_all_attempts(lib: State<LibraryState>, since: i64) -> Result<Vec<Attempt>, String> {
+    lib.get()?.all_attempts(since)
+}
+
 #[tauri::command]
 fn library_list(lib: State<LibraryState>) -> Result<Vec<Song>, String> {
     lib.get()?.list()
@@ -483,6 +516,17 @@ fn play_note(state: State<AppState>, key: u8, velocity: u8) -> Result<(), String
     Ok(())
 }
 
+/// Pedal de sustain (ao ouvir uma gravação).
+#[tauri::command]
+fn play_pedal(state: State<AppState>, down: bool) -> Result<(), String> {
+    state.audio()?.send(SynthMessage {
+        command: 0xB0,
+        data1: 64,
+        data2: if down { 127 } else { 0 },
+    });
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let state = AppState {
@@ -520,6 +564,7 @@ pub fn run() {
             sound_download,
             sound_remove,
             play_note,
+            play_pedal,
             read_file,
             write_file,
             library_list,
@@ -530,6 +575,9 @@ pub fn run() {
             library_delete,
             library_record_attempt,
             library_attempts,
+            library_all_attempts,
+            backup_export,
+            backup_import,
             open_search,
             library_error_map,
             library_import_collection,

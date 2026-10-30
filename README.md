@@ -4,7 +4,7 @@ App de prática de piano para Windows: leitor de partitura (Guitar Pro, MusicXML
 
 O plano completo está em [docs/PLANO.md](docs/PLANO.md).
 
-## Estado atual: fase 5 — prática dirigida
+## Estado atual: fase 6 — ferramentas de estudo
 
 **Fase 1 — piano virtual**
 
@@ -38,7 +38,7 @@ Três modos na barra de cima:
 - Retorno na hora: a tecla pisca verde (certa), amarela (fora do tempo) ou vermelha (errada); placar com pontos de 0 a 100, precisão e contagem de cada tipo.
 - Pontos: nota no tempo vale 1, fora do tempo 0,5, perdida 0; cada nota errada desconta 0,5.
 
-O motor de prática roda na interface (TypeScript), não no Rust: o som do teclado continua indo direto do MIDI ao sintetizador, e o atraso de poucos ms até a interface afeta só a correção. Ainda não há compensação da latência da saída de áudio da reprodução; se as notas aparecerem sempre "adiantadas", é isso.
+O motor de prática roda na interface (TypeScript), não no Rust: o som do teclado continua indo direto do MIDI ao sintetizador, e o atraso de poucos ms até a interface afeta só a correção. O atraso da saída de áudio é descontado pela calibração em **Ajustes → Sincronia** (veja a fase 6).
 
 **Interface**
 
@@ -64,6 +64,16 @@ A aba **Buscar** procura a música no Cifra Club, Ultimate Guitar, Songsterr, Mu
 - **Treinar os piores trechos.** Uma sessão curta: cada trecho em loop com a rampa, e ao dominar um o app passa para o próximo.
 - **Leitura** (aba própria). Cartões com uma nota na pauta; toque a nota no teclado. Clave de sol, de fá ou as duas; só na pauta ou com linhas suplementares; com ou sem sustenidos e bemóis; opção de esconder o teclado virtual. Repetição espaçada: notas erradas ou lentas (mais de 2,5 s) voltam mais vezes, e o histórico fica salvo entre sessões. Sessões de 20 cartões, com as notas mais difíceis ao lado.
 - **Evolução da nota** no detalhe de cada música da biblioteca (execuções completas com ponto cheio, incompletas vazado).
+
+**Fase 6 — ferramentas de estudo**
+
+- **Sincronia (calibração do atraso).** Em **Ajustes → Sincronia → Calibrar**, toque junto com 16 cliques (tecla do teclado ou barra de espaço). O app mede o atraso típico entre o som e o seu toque (saída de áudio + teclado + o seu costume) e desconta no modo Tocar junto. Dá para ajustar à mão de −100 a 300 ms (duplo clique zera).
+- **Gravar o que você toca.** O botão vermelho ao lado do tempo grava as notas e o pedal (do teclado MIDI ou do mouse). Depois, **Gravação → Ouvir** toca de volta com o cursor da partitura acompanhando, e **Exportar .mid…** salva um arquivo MIDI (abre em qualquer editor).
+- **Notas caindo.** Em **Exibir**, troque **Pauta** por **Notas caindo**: cada nota desce até a tecla certa do teclado virtual (azul = mão direita, verde = esquerda; a mão que você não está praticando fica apagada). Funciona em todos os modos, inclusive Esperar.
+- **Dedilhado sugerido.** Em **Exibir**, números de 1 (polegar) a 5 (mínimo) sobre as notas da pauta e dentro das notas caindo. É calculado pelo app (mão parada sempre que der, passagem do polegar nas escalas, acordes sem esticar demais): bom ponto de partida, mas confira trechos difíceis.
+- **Tamanho e layout da partitura.** Em **Exibir**: zoom de 60% a 160% e layout em página (rola para baixo) ou uma linha só (rola para o lado).
+- **Progresso** (aba própria). Minutos praticados hoje com meta diária (10 a 60 min), dias seguidos de prática, últimos 7 dias, precisão média, gráfico dos últimos 30 dias e as músicas que mais evoluíram (clique para abrir). Conta o tempo das práticas com correção.
+- **Backup.** Em **Ajustes → Backup**, **Fazer backup…** salva um `.zip` com o banco (músicas, práticas, leitura), as partituras, as capas e as preferências. **Restaurar backup…** troca a biblioteca pela do arquivo (os caminhos são refeitos para o computador atual) e guarda a anterior em `antes-da-restauracao`. SoundFonts baixados e o token do GitHub não entram.
 
 **Capas de álbum**
 
@@ -155,6 +165,12 @@ src/
     timeline.ts      notas da faixa em ordem de execução, mãos, andamento
     engine.ts        modo espera, avaliação de tempo, pontuação
     usePractice.ts   liga o motor ao alphaTab, ao teclado e ao sintetizador
+    latency.ts       calibração do atraso (LatencySection.tsx: o assistente)
+    recording.ts     gravação e exportação MIDI (useRecorder.ts: gravar e ouvir)
+    fingering.ts     dedilhado sugerido (programação dinâmica por mão)
+    FallingNotes.tsx visão "notas caindo"
+  progress/          painel de progresso (resumo por dia, sequência, evolução)
+  sound/             seletor de timbre, ajustes de som e catálogo de SoundFonts
   Keyboard.tsx       teclado de 61 teclas
 src-tauri/src/
   midi.rs            entrada MIDI, tradução das mensagens, Local Control
@@ -165,6 +181,7 @@ src-tauri/src/
   updates.rs         verificador de versão (releases do GitHub)
   covers.rs          busca e download de capas
   sounds.rs          timbres, ajustes de som e catálogo de SoundFonts
+  backup.rs          backup e restauração da biblioteca (.zip)
   lib.rs             estado do app e comandos Tauri
 docs/PLANO.md        plano do projeto
 ```

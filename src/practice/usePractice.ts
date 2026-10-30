@@ -41,6 +41,8 @@ interface Options {
   onSpeed: (percent: number) => void;
   /** Volta limpa no andamento final do trecho. */
   onMastered?: () => void;
+  /** Atraso calibrado (ms reais) entre o som e o toque do aluno. */
+  latencyMs?: number;
 }
 
 export interface PracticeState {
@@ -233,6 +235,9 @@ export function usePractice(options: Options) {
 
   // ------------------------------------------------------------ tocar junto
 
+  /** O atraso calibrado em ms de música (o aluno ouve e responde depois). */
+  const lag = () => (latest.current.latencyMs ?? 0) * latest.current.speed;
+
   const songMs = useCallback(() => {
     if (!tempo) return 0;
     const elapsed = Math.min(performance.now() - position.current.at, MAX_EXTRAPOLATION_MS);
@@ -262,7 +267,7 @@ export function usePractice(options: Options) {
       position.current = { tick: e.currentTick, at: performance.now() };
       const j = judge.current;
       if (!j || !tempo) return;
-      const missed = j.sweep(tempo.ms(e.currentTick));
+      const missed = j.sweep(tempo.ms(e.currentTick) - lag());
       record(missed, missed.length);
     });
     const offFinished = api.playerFinished.on(() => {
@@ -383,7 +388,7 @@ export function usePractice(options: Options) {
 
       const j = judge.current;
       if (j && apiRef.current?.playerState === alphaTab.synth.PlayerState.Playing) {
-        const result = j.press(key, songMs());
+        const result = j.press(key, songMs() - lag());
         flash(key, flashOf(result));
         record([result], result.verdict === "wrong" ? 0 : 1);
       }
