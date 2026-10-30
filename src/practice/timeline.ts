@@ -21,6 +21,8 @@ export interface TimelineNote {
   endTick: number;
   /** Índice do compasso (o mesmo em todas as repetições). */
   bar: number;
+  /** Dedo escrito na partitura (1 = polegar), se houver. */
+  finger?: number;
 }
 
 export interface Step {
@@ -31,6 +33,8 @@ export interface Step {
 interface NoteLike {
   realValue: number;
   isTieDestination: boolean;
+  /** Dedo escrito (0 = polegar; negativo = nenhum). */
+  leftHandFinger?: number;
 }
 
 interface BeatLike {
@@ -87,6 +91,7 @@ export function buildTimeline(cache: TickCacheLike, trackIndex: number): Step[] 
             tick: playbackStart,
             endTick: playbackStart + beat.playbackDuration,
             bar: bar.masterBar.index,
+            finger: (note.leftHandFinger ?? -1) >= 0 ? note.leftHandFinger! + 1 : undefined,
           });
           steps.set(playbackStart, list);
         }

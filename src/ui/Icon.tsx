@@ -103,6 +103,7 @@ const PATHS = {
       <path d="M20 13v2a4 4 0 0 1-4 4H4" />
     </>
   ),
+  technique: <path d="M3 20h5v-4h4v-4h4V8h5" />,
   heat: (
     <>
       <rect x="3" y="4" width="5" height="16" rx="1.5" />

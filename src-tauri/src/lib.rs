@@ -29,6 +29,9 @@ struct AppState {
     sound: Mutex<SoundSettings>,
     /// Curva de toque, lida a cada nota que chega do teclado.
     curve: Arc<AtomicU8>,
+    /// O som sai pelo teclado: ele toca as próprias notas (Local Control On)
+    /// e recebe a banda e o metrônomo pela saída MIDI.
+    keyboard_sound: Arc<AtomicBool>,
 }
 
 impl AppState {
@@ -44,6 +47,9 @@ struct Status {
     audio_error: Option<String>,
     midi_port: Option<String>,
     local_control_off: bool,
+    /// O teclado conectado tem saída MIDI (dá para mandar som para ele).
+    midi_output: bool,
+    keyboard_sound: bool,
     soundfont: Option<String>,
     soundfont_builtin: bool,
     presets: Vec<PresetInfo>,
@@ -58,6 +64,8 @@ fn get_status(state: State<AppState>) -> Status {
         audio_error: state.audio.as_ref().err().cloned(),
         midi_port: midi.as_ref().map(|s| s.port_name.clone()),
         local_control_off: midi.as_ref().is_some_and(MidiSession::local_control_off),
+        midi_output: midi.as_ref().is_some_and(MidiSession::has_output),
+        keyboard_sound: state.keyboard_sound.load(Ordering::Relaxed),
         soundfont: state.soundfont.lock().unwrap().clone(),
         soundfont_builtin: state.builtin.load(Ordering::Relaxed),
         presets: state.presets.lock().unwrap().clone(),
@@ -74,13 +82,16 @@ fn list_midi_inputs() -> Result<Vec<String>, String> {
 fn connect_midi(app: AppHandle, state: State<AppState>, port: String) -> Result<Status, String> {
     let synth = state.audio()?.sender();
     let curve = state.curve.clone();
+    let keyboard_sound = state.keyboard_sound.clone();
     let mut current = state.midi.lock().unwrap();
     // Fecha a conexão anterior primeiro (religa o som interno daquele teclado).
     current.take();
-    let session = MidiSession::open(&port, move |msg| {
+    let on_keyboard = keyboard_sound.load(Ordering::Relaxed);
+    let session = MidiSession::open(&port, on_keyboard, move |msg| {
         let (to_synth, to_ui) = midi::translate(msg);
-        // O som sai antes de qualquer trabalho da interface.
-        if let Some(mut m) = to_synth {
+        // O som sai antes de qualquer trabalho da interface. Com o som no
+        // teclado, ele mesmo toca as notas.
+        if let Some(mut m) = to_synth.filter(|_| !keyboard_sound.load(Ordering::Relaxed)) {
             if m.command == 0x90 {
                 m.data2 = VelocityCurve::from_u8(curve.load(Ordering::Relaxed)).apply(m.data2);
             }
@@ -90,6 +101,10 @@ fn connect_midi(app: AppHandle, state: State<AppState>, port: String) -> Result<
             let _ = app.emit("key", e);
         }
     })?;
+    // Sem saída MIDI não há como o som ir para o teclado: volta ao computador.
+    if !session.has_output() {
+        state.keyboard_sound.store(false, Ordering::Relaxed);
+    }
     *current = Some(session);
     drop(current);
     Ok(get_status(state))
@@ -524,8 +539,49 @@ fn play_note(state: State<AppState>, key: u8, velocity: u8) -> Result<(), String
     } else {
         SynthMessage::note_off(key)
     };
+    if state.keyboard_sound.load(Ordering::Relaxed)
+        && let Some(session) = state.midi.lock().unwrap().as_mut()
+        && session.has_output()
+    {
+        session.send(&[message.command, message.data1, message.data2]);
+        return Ok(());
+    }
     state.audio()?.send(message);
     Ok(())
+}
+
+/// Liga ou desliga o som pelo teclado.
+#[tauri::command]
+fn set_keyboard_sound(state: State<AppState>, on: bool) -> Status {
+    if let Some(session) = state.midi.lock().unwrap().as_mut() {
+        // Sem saída MIDI, o som continua no computador.
+        let on = on && session.has_output();
+        state.keyboard_sound.store(on, Ordering::Relaxed);
+        session.set_local_control(on);
+    } else {
+        // Vale quando o teclado conectar.
+        state.keyboard_sound.store(on, Ordering::Relaxed);
+    }
+    // Notas que o computador ainda tocava param.
+    if on && let Ok(audio) = state.audio() {
+        audio.send(SynthMessage {
+            command: 0xB0,
+            data1: 123,
+            data2: 0,
+        });
+    }
+    get_status(state)
+}
+
+/// Mensagens MIDI para o teclado (banda e metrônomo, com o som no teclado).
+#[tauri::command]
+fn midi_out(state: State<AppState>, data: Vec<u8>) {
+    if !state.keyboard_sound.load(Ordering::Relaxed) {
+        return;
+    }
+    if let Some(session) = state.midi.lock().unwrap().as_mut() {
+        session.send(&data);
+    }
 }
 
 /// Pedal de sustain (ao ouvir uma gravação).
@@ -549,6 +605,7 @@ pub fn run() {
         presets: Mutex::new(Vec::new()),
         sound: Mutex::new(SoundSettings::default()),
         curve: Arc::new(AtomicU8::new(VelocityCurve::Normal.to_u8())),
+        keyboard_sound: Arc::new(AtomicBool::new(false)),
     };
 
     tauri::Builder::default()
@@ -576,6 +633,8 @@ pub fn run() {
             sound_download,
             sound_remove,
             play_note,
+            set_keyboard_sound,
+            midi_out,
             play_pedal,
             read_file,
             write_file,

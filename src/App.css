@@ -1452,7 +1452,8 @@ table.attempts {
   width: 72px;
 }
 
-.worst {
+.worst,
+.sections {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -1460,6 +1461,26 @@ table.attempts {
   border-top: 1px solid var(--border);
 }
 
+.section-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.section-row .facet {
+  flex: 1;
+}
+
+.sections form {
+  margin-top: 6px;
+}
+
+.sections form input {
+  flex: 1;
+  min-width: 0;
+}
+
+.sections h4,
 .worst h4 {
   margin: 0 0 4px;
   font-size: 0.72rem;
@@ -2521,4 +2542,69 @@ table.attempts {
   word-break: break-all;
   font-family: ui-monospace, monospace;
   font-size: 0.78rem;
+}
+
+/* ================================================================ técnica */
+
+.technique-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.technique-form .field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.technique-form .label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.technique-form .row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.technique-form .segmented {
+  flex-wrap: wrap;
+}
+
+.technique-form input[type="range"] {
+  width: min(320px, 100%);
+}
+
+.technique-form .bpm {
+  font-variant-numeric: tabular-nums;
+  min-width: 64px;
+}
+
+.technique-go {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.technique-path {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.technique-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }

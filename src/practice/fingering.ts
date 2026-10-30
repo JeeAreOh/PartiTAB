@@ -158,12 +158,19 @@ export interface FingeredNote {
   key: number;
   hand: Hand;
   tick: number;
+  /** Dedo escrito na partitura: quando a mão tem dedilhado escrito, ele vale. */
+  finger?: number;
 }
 
 /** Dedos por nota (`tick:key`) para notas das duas mãos. */
 export function fingerNotes(notes: FingeredNote[]): Map<string, number> {
   const out = new Map<string, number>();
   for (const hand of ["right", "left"] as const) {
+    const written = notes.filter((n) => n.hand === hand && n.finger);
+    if (written.length) {
+      for (const n of written) out.set(`${n.tick}:${n.key}`, n.finger!);
+      continue;
+    }
     const byTick = new Map<number, number[]>();
     for (const n of notes) {
       if (n.hand !== hand) continue;

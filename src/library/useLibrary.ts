@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import * as alphaTab from "@coderline/alphatab";
 import { api, type Attempt, type Song, type SongPatch } from "../api";
 import type { Level } from "../reducer/reduce";
+import type { SongSection } from "../practice/sections";
 import type { SyncPoint } from "../video/sync";
 
 /** Preferências guardadas por música, para reabrir do jeito que estava. */
@@ -13,6 +14,8 @@ export interface SongPrefs {
   track?: number | null;
   /** Vídeo do YouTube sincronizado com a partitura. */
   video?: { id: string; sync: SyncPoint[] } | null;
+  /** Seções criadas pelo aluno (compassos a partir de 0). */
+  sections?: SongSection[];
 }
 
 export function parsePrefs(song: Song | null): SongPrefs {
@@ -27,7 +30,9 @@ export function parsePrefs(song: Song | null): SongPrefs {
 export function readMetadata(data: Uint8Array): { title: string; artist: string } | null {
   try {
     const score = alphaTab.importer.ScoreLoader.loadScoreFromBytes(data, new alphaTab.Settings());
-    return { title: score.title.trim(), artist: score.artist.trim() };
+    // O leitor de MusicXML do alphaTab troca espaços por espaços inseparáveis.
+    const clean = (text: string) => text.replace(/\u00a0/g, " ").trim();
+    return { title: clean(score.title), artist: clean(score.artist) };
   } catch {
     return null;
   }

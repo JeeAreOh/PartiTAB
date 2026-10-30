@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as alphaTab from "@coderline/alphatab";
 import { fingerNotes } from "./practice/fingering";
+import { applySections, fileSections, type SongSection } from "./practice/sections";
+import { EVENT_FILTER, eventsToBytes, silence } from "./practice/keyboardOut";
 import {
   TempoMap,
   buildTimeline,
@@ -84,6 +86,8 @@ export interface ScoreState {
   loop: boolean;
   /** Muda a cada desenho terminado (para o mapa de erros se reposicionar). */
   renderVersion: number;
+  /** Seções escritas no arquivo (as do aluno vêm das preferências da música). */
+  fileSections: SongSection[];
 }
 
 const EMPTY: ScoreState = {
@@ -104,6 +108,7 @@ const EMPTY: ScoreState = {
   range: null,
   loop: false,
   renderVersion: 0,
+  fileSections: [],
 };
 
 export function useScore(onError: (message: string) => void) {
@@ -121,6 +126,9 @@ export function useScore(onError: (message: string) => void) {
   const syncRef = useRef<SyncPoint[]>([]);
   const rangeRef = useRef<{ startTick: number; endTick: number } | null>(null);
   const fingeringRef = useRef(false);
+  const sectionsRef = useRef<SongSection[]>([]);
+  /** Som pelo teclado: para onde vão os eventos do player (null = som do computador). */
+  const keyboardOutRef = useRef<((bytes: number[]) => void) | null>(null);
   const errorRef = useRef(onError);
   errorRef.current = onError;
   const [state, setState] = useState<ScoreState>(EMPTY);
@@ -187,13 +195,26 @@ export function useScore(onError: (message: string) => void) {
     api.postRenderFinished.on(() =>
       setState((s) => ({ ...s, renderVersion: s.renderVersion + 1 })),
     );
-    api.playerReady.on(() => setState((s) => ({ ...s, ready: true })));
+    api.playerReady.on(() => {
+      // O player pode ter sido recriado: reaplica o som pelo teclado.
+      if (keyboardOutRef.current) applyKeyboardOut(api, true);
+      setState((s) => ({ ...s, ready: true }));
+    });
+    api.midiEventsPlayed.on((e) => {
+      const send = keyboardOutRef.current;
+      if (!send) return;
+      const bytes = eventsToBytes(e.events as unknown as Parameters<typeof eventsToBytes>[0]);
+      if (bytes.length) send(bytes);
+    });
     api.playerStateChanged.on((e) => {
       const playing = e.state === alphaTab.synth.PlayerState.Playing;
+      // Ao parar, o teclado não fica com notas presas.
+      if (!playing) keyboardOutRef.current?.(silence());
       setState((s) => ({ ...s, playing, sounding: playing ? s.sounding : new Set() }));
     });
     let lastSecond = -1;
     api.playerPositionChanged.on((e) => {
+      if (e.isSeek) keyboardOutRef.current?.(silence());
       // Atualiza a interface no máximo uma vez por segundo.
       const second = Math.floor(e.currentTime / 1000);
       if (second === lastSecond) return;
@@ -235,17 +256,27 @@ export function useScore(onError: (message: string) => void) {
       index = defaultTrack(sourceTracks);
     }
     if (fingeringRef.current && index !== null) annotateFingering(score, index);
+    const fromFile = fileSections(score.masterBars);
+    applySections(score, sectionsRef.current);
     trackRef.current = index;
     optionsRef.current = options;
     bandShiftRef.current = arrangement?.shift ?? 0;
     if (mediaRef.current && syncRef.current.length > 0) score.applyFlatSyncPoints(syncRef.current);
-    setState((s) => ({ ...s, sourceTracks, roles, arrangement, track: index }));
+    setState((s) => ({
+      ...s,
+      sourceTracks,
+      roles,
+      arrangement,
+      track: index,
+      fileSections: fromFile,
+    }));
     api.stop();
     api.renderScore(score, index !== null ? [index] : undefined);
     // O trecho vale para a mesma música em qualquer arranjo (os compassos são os mesmos).
     applyRange(api, rangeRef.current);
     attachMedia(api, mediaRef.current);
-    return { title: score.title.trim(), artist: score.artist.trim(), roles };
+    const clean = (text: string) => text.replace(/\u00a0/g, " ").trim();
+    return { title: clean(score.title), artist: clean(score.artist), roles };
   }, []);
 
   /** Abre uma partitura. Devolve título, artista e papéis das faixas, ou null se inválida. */
@@ -396,6 +427,29 @@ export function useScore(onError: (message: string) => void) {
     [show],
   );
 
+  /**
+   * Seções do aluno, desenhadas na partitura. `redraw` = false só guarda (para
+   * a próxima música que abrir).
+   */
+  const setSections = useCallback(
+    (sections: SongSection[], redraw = true) => {
+      if (JSON.stringify(sectionsRef.current) === JSON.stringify(sections)) return;
+      sectionsRef.current = sections;
+      if (redraw && bytesRef.current) show(optionsRef.current, trackRef.current);
+    },
+    [show],
+  );
+
+  /** Manda a banda e o metrônomo para o teclado (`send`) ou de volta ao computador (null). */
+  const setKeyboardOut = useCallback((send: ((bytes: number[]) => void) | null) => {
+    const previous = keyboardOutRef.current;
+    keyboardOutRef.current = send;
+    previous?.(silence());
+    const api = apiRef.current;
+    // Só mexe no volume quando o modo muda (com vídeo, o volume é o do vídeo).
+    if (api && (send !== null) !== (previous !== null)) applyKeyboardOut(api, send !== null);
+  }, []);
+
   const loadSoundFont = useCallback((data: Uint8Array) => {
     apiRef.current?.loadSoundFont(data, false);
   }, []);
@@ -427,6 +481,8 @@ export function useScore(onError: (message: string) => void) {
     loadSoundFont,
     setDisplay,
     setFingering,
+    setSections,
+    setKeyboardOut,
     ...controls,
   };
 }
@@ -455,7 +511,8 @@ function attachMedia(api: alphaTab.AlphaTabApi, handler: MediaHandler | null) {
 
 /**
  * Escreve o dedilhado sugerido como texto acima de cada tempo da faixa
- * (acordes de cima para baixo). Não muda notas nem a reprodução.
+ * (acordes de cima para baixo). Não muda notas nem a reprodução. Dedilhado
+ * escrito na partitura (exercícios de técnica) o alphaTab já desenha.
  */
 function annotateFingering(score: alphaTab.model.Score, trackIndex: number) {
   const track = score.tracks[trackIndex];
@@ -466,7 +523,7 @@ function annotateFingering(score: alphaTab.model.Score, trackIndex: number) {
       for (const voice of bar.voices) {
         for (const beat of voice.beats) {
           for (const note of beat.notes) {
-            if (note.isTieDestination) continue;
+            if (note.isTieDestination || note.leftHandFinger >= 0) continue;
             const key = note.realValue;
             items.push({
               beat,
@@ -513,4 +570,10 @@ function timelineOf(api: alphaTab.AlphaTabApi, track: number | null) {
     timeline: buildTimeline(cache, track),
     tempo: new TempoMap(cache, api.score?.tempo),
   };
+}
+
+/** Com o som no teclado, o player fica mudo e avisa cada evento tocado. */
+function applyKeyboardOut(api: alphaTab.AlphaTabApi, on: boolean) {
+  api.midiEventsPlayedFilter = on ? EVENT_FILTER : [];
+  api.masterVolume = on ? 0 : 1;
 }

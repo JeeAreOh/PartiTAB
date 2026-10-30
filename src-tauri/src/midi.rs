@@ -117,18 +117,41 @@ pub fn list_inputs() -> Result<Vec<String>, String> {
         .collect())
 }
 
+/// Divide bytes MIDI em mensagens (status + 1 ou 2 bytes de dados). Bytes
+/// soltos sem status são descartados.
+pub fn split_messages(bytes: &[u8]) -> Vec<&[u8]> {
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        let status = bytes[i];
+        if !(0x80..0xF0).contains(&status) {
+            i += 1;
+            continue;
+        }
+        let len = if matches!(status & 0xF0, 0xC0 | 0xD0) { 2 } else { 3 };
+        if i + len > bytes.len() {
+            break;
+        }
+        out.push(&bytes[i..i + len]);
+        i += len;
+    }
+    out
+}
+
 /// Conexão ativa com o teclado. Ao ser descartada, religa o som interno
 /// (Local Control On) para o teclado voltar a soar sozinho.
 pub struct MidiSession {
     pub port_name: String,
     _input: MidiInputConnection<()>,
     output: Option<MidiOutputConnection>,
+    local_off: bool,
 }
 
 impl MidiSession {
     /// Abre a porta de entrada e, se existir uma porta de saída com o mesmo
-    /// nome, desliga o som interno do teclado.
-    pub fn open<F>(port_name: &str, mut on_message: F) -> Result<Self, String>
+    /// nome, desliga o som interno do teclado (a não ser que o som deva sair
+    /// pelo próprio teclado: `keyboard_sound`).
+    pub fn open<F>(port_name: &str, keyboard_sound: bool, mut on_message: F) -> Result<Self, String>
     where
         F: FnMut(&[u8]) + Send + 'static,
     {
@@ -142,18 +165,38 @@ impl MidiSession {
             .connect(&port, "partitab-in", move |_, msg, _| on_message(msg), ())
             .map_err(|e| e.to_string())?;
 
-        let output = open_output(port_name)
-            .and_then(|mut out| out.send(&local_control(false)).is_ok().then_some(out));
-
-        Ok(Self {
+        let mut session = Self {
             port_name: port_name.to_string(),
             _input: connection,
-            output,
-        })
+            output: open_output(port_name),
+            local_off: false,
+        };
+        session.set_local_control(keyboard_sound);
+        Ok(session)
     }
 
     pub fn local_control_off(&self) -> bool {
+        self.local_off
+    }
+
+    pub fn has_output(&self) -> bool {
         self.output.is_some()
+    }
+
+    /// Liga (`on`) ou desliga o som interno do teclado.
+    pub fn set_local_control(&mut self, on: bool) {
+        if let Some(out) = self.output.as_mut() {
+            self.local_off = out.send(&local_control(on)).is_ok() && !on;
+        }
+    }
+
+    /// Envia mensagens MIDI ao teclado (a banda e o metrônomo, no modo "som do teclado").
+    pub fn send(&mut self, bytes: &[u8]) {
+        if let Some(out) = self.output.as_mut() {
+            for message in split_messages(bytes) {
+                let _ = out.send(message);
+            }
+        }
     }
 }
 
@@ -240,6 +283,16 @@ mod tests {
         assert_eq!(translate(&[0xF8]), (None, None));
         assert_eq!(translate(&[]), (None, None));
         assert_eq!(translate(&[0x90]), (None, None));
+    }
+
+    #[test]
+    fn splits_raw_bytes_into_messages() {
+        let bytes = [0x91, 60, 100, 0xC2, 5, 0x00, 0xB3, 7, 90, 0x81, 60];
+        assert_eq!(
+            split_messages(&bytes),
+            vec![&[0x91, 60, 100][..], &[0xC2, 5][..], &[0xB3, 7, 90][..]]
+        );
+        assert!(split_messages(&[0xF0, 1, 2]).is_empty());
     }
 
     #[test]

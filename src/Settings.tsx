@@ -20,6 +20,7 @@ interface Props {
   onRefresh: () => void;
   onConnect: () => void;
   onDisconnect: () => void;
+  onKeyboardSound: (on: boolean) => void;
   onChooseSoundfont: () => void;
   onUseDefaultSoundfont: () => void;
   onUseSoundfont: (path: string) => void;
@@ -69,9 +70,29 @@ export function Settings(p: Props) {
               <p>
                 Conectado a <b>{status.midiPort}</b>
               </p>
-              {status.localControlOff ? (
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={status.keyboardSound}
+                  disabled={p.busy || !status.midiOutput}
+                  onChange={(e) => p.onKeyboardSound(e.target.checked)}
+                />
+                Som pelo teclado
+              </label>
+              {status.keyboardSound ? (
                 <p className="muted">
-                  O som interno do teclado foi desligado; o piano toca pelo PC.
+                  O teclado toca o que você toca, sem atraso, com o timbre escolhido nele. A banda, a
+                  outra mão e o metrônomo também saem pelo teclado (pelos canais 2 a 16); o som do
+                  computador fica mudo.
+                </p>
+              ) : !status.midiOutput ? (
+                <p className="muted">
+                  Este teclado não tem saída MIDI com o mesmo nome: o som fica no computador.
+                </p>
+              ) : status.localControlOff ? (
+                <p className="muted">
+                  O som interno do teclado foi desligado; o piano toca pelo PC. Ligue “Som pelo
+                  teclado” para usar os timbres do próprio teclado, sem atraso.
                 </p>
               ) : (
                 <p className="warn">

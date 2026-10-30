@@ -4,12 +4,13 @@ App de prática de piano para Windows: leitor de partitura (Guitar Pro, MusicXML
 
 O plano completo está em [docs/PLANO.md](docs/PLANO.md).
 
-## Estado atual: fase 6 — ferramentas de estudo
+## Estado atual: fase 7 — técnica, seções e som pelo teclado
 
 **Fase 1 — piano virtual**
 
 - Lista as portas MIDI e conecta ao teclado (lembra a última porta).
 - Ao conectar, envia **Local Control Off** (CC 122 = 0) para o teclado parar de soar sozinho; ao desconectar ou fechar o app, envia **Local On** de volta.
+- **Som pelo teclado** (Ajustes → Teclado): o teclado volta a tocar as próprias notas (Local On), sem atraso e com o timbre escolhido nele, e o computador para de sintetizá-las. A reprodução da partitura (banda, a outra mão, metrônomo e contagem) sai pela saída MIDI do teclado nos canais 2 a 16 (bateria no 10), e o som do computador fica mudo. O canal 1 fica livre, então a voz do teclado não muda. Precisa de uma saída MIDI com o mesmo nome da entrada; sem ela, o som continua no computador.
 - Cada tecla toca um piano SoundFont (`.sf2`) gerado no PC, com velocidade e pedal de sustain.
 - O app já abre com som: usa o SONiVOX (`src-tauri/resources/soundfonts/`, Apache 2.0) até você escolher outro.
 - **Timbre** na barra superior: lista os instrumentos do SoundFont por família (pianos, órgãos, cordas…), com busca, favoritos e volume. Trocar a voz no próprio teclado não muda o timbre do app.
@@ -74,6 +75,8 @@ A aba **Buscar** procura a música primeiro em fontes de MIDI para piano (busca 
 - **Tela cheia.** Botão ao lado da engrenagem ou <kbd>F11</kbd>. Com mais de um monitor, **Ajustes → Tela** escolhe em qual a tela cheia abre (numerados da esquerda para a direita, com resolução e o principal marcado); trocar de monitor em tela cheia leva o app para o outro na hora. Opção de abrir o app já em tela cheia.
 - **Tamanho e layout da partitura.** Em **Exibir**: zoom de 60% a 160% e layout em página (rola para baixo) ou uma linha só (rola para o lado).
 - **Progresso** (aba própria). Minutos praticados hoje com meta diária (10 a 60 min), dias seguidos de prática, últimos 7 dias, precisão média, gráfico dos últimos 30 dias e as músicas que mais evoluíram (clique para abrir). Conta o tempo das práticas com correção.
+- **Técnica** (aba própria). Escalas (maior, menor harmônica, menor natural), arpejos e cadências I–IV–V–I nas 24 tonalidades, com mão direita, esquerda ou as duas, 1 ou 2 oitavas, semínimas, colcheias ou semicolcheias e o andamento escolhido. O exercício é gerado como partitura de piano com o dedilhado tradicional escrito (o polegar cai sempre nos mesmos graus de cada tonalidade, como nos métodos de escala; nos arpejos, numa tecla branca) e entra na biblioteca: Esperar, Tocar junto, rampa, loop, mapa de erros e progresso funcionam igual. Há um caminho sugerido do mais fácil ao mais difícil e a lista dos exercícios já praticados com a melhor nota.
+- **Seções.** Em **Trecho → Seções**: as seções escritas no arquivo (marcas de ensaio do Guitar Pro e do MusicXML, marcadores do MIDI) e as suas. Escolha um trecho e dê um nome (Introdução, Refrão, "parte difícil") para salvá-lo com a música; ele aparece na partitura e um clique repete o trecho em loop.
 - **Backup.** Em **Ajustes → Backup**, **Fazer backup…** salva um `.zip` com o banco (músicas, práticas, leitura), as partituras, as capas e as preferências. **Restaurar backup…** troca a biblioteca pela do arquivo (os caminhos são refeitos para o computador atual) e guarda a anterior em `antes-da-restauracao`. SoundFonts baixados e o token do GitHub não entram.
 
 **Capas de álbum**
@@ -106,11 +109,13 @@ Em **Arranjo**, qualquer partitura (tabs de guitarra inclusive) vira uma faixa d
 
 ### Arquivos MIDI
 
-Arquivos `.mid` abrem como qualquer partitura (Abrir, Adicionar partituras, Buscar). Ao abrir, o app converte o MIDI numa partitura de piano com duas pautas:
+Arquivos `.mid` abrem como qualquer partitura (Abrir, Adicionar partituras, Buscar). Ao abrir, o app converte o MIDI em partitura:
 
-- **Mãos.** Com duas faixas de notas, cada faixa é uma mão: o nome decide ("RH"/"LH", "direita"/"esquerda", "melody"/"bass"), senão a mais aguda fica na direita. Com uma faixa só, as notas se dividem pelo dó central.
-- **Ritmo.** As notas são alinhadas à semicolcheia; MIDI tocado à mão fica legível, e tercinas viram aproximações. Nota longa sob notas rápidas vira uma segunda voz.
-- **Andamento, fórmula de compasso e armadura** vêm do arquivo. A bateria (canal 10) fica de fora.
+- **Faixas.** Cada instrumento do arquivo (faixa + canal, com o timbre General MIDI dele) vira uma faixa da partitura, como num Guitar Pro com a banda: dá para tocar junto com a banda e montar o arranjo por níveis. Os pianos se juntam numa faixa de piano com duas pautas. Arquivo só de piano (ou de um instrumento só) vira piano.
+- **Mãos.** Com duas faixas de piano, cada uma é uma mão: o nome decide ("RH"/"LH", "direita"/"esquerda", "melody"/"bass"), senão a mais aguda fica na direita. Com uma só, as notas se dividem pelo dó central.
+- **Ritmo.** Cada tempo é alinhado à semicolcheia ou à tercina, o que errar menos, e tercinas são escritas como tercinas. Colcheias em swing (longa-curta) viram colcheias normais com a indicação "Swing". Nota longa sob notas rápidas vira uma segunda voz.
+- **Grafia.** As notas seguem a armadura: sensível e sexta elevadas nas menores (dó♯ em ré menor), mi♯ em fá♯ maior.
+- **Andamento, fórmula de compasso, armadura e marcadores** (que viram seções) vêm do arquivo. A bateria (canal 10) fica de fora.
 
 O arquivo original continua na biblioteca; a conversão é refeita ao abrir.
 
@@ -178,7 +183,10 @@ src/
     recording.ts     gravação e exportação MIDI (useRecorder.ts: gravar e ouvir)
     fingering.ts     dedilhado sugerido (programação dinâmica por mão)
     FallingNotes.tsx visão "notas caindo"
-  midi/              MIDI → MusicXML de piano (duas pautas, mãos, ritmo alinhado)
+  midi/              MIDI → MusicXML (faixas, mãos, tercinas, swing); musicxml.ts escreve o MusicXML
+  technique/         aba Técnica: escalas, arpejos e cadências com dedilhado
+  practice/sections.ts       seções do arquivo e do aluno
+  practice/keyboardOut.ts    som pelo teclado (eventos do player → MIDI)
   progress/          painel de progresso (summary.ts: resumo por dia, sequência, evolução)
   sound/             seletor de timbre, ajustes de som e catálogo de SoundFonts
   Keyboard.tsx       teclado de 61 teclas

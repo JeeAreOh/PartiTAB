@@ -1,14 +1,26 @@
-// Converte um arquivo MIDI (.mid) em MusicXML para piano, com duas pautas.
-// O alphaTab não importa MIDI; com a conversão, a biblioteca, a prática e a
-// busca tratam o .mid como qualquer outra partitura.
+// Converte um arquivo MIDI (.mid) em MusicXML. O alphaTab não importa MIDI;
+// com a conversão, a biblioteca, a prática e a busca tratam o .mid como
+// qualquer outra partitura.
 //
-// - Mãos: se o arquivo tem duas faixas de notas, a mais aguda é a mão direita
-//   (ou o nome da faixa decide: "right", "left", "direita", "RH"…). Senão as
-//   notas se dividem pelo dó central.
-// - Ritmo: tudo é alinhado à semicolcheia. Tercinas ficam aproximadas.
-// - Bateria (canal 10) fica de fora.
+// - Faixas: cada instrumento (faixa + canal) vira uma faixa da partitura, com
+//   o timbre do arquivo. Os pianos se juntam numa faixa de piano com duas
+//   pautas. Um arquivo só de piano (ou de um instrumento) vira piano.
+// - Mãos: com duas faixas de piano, o nome decide ("right", "LH", "direita"…)
+//   ou a mais aguda fica na direita; senão as notas se dividem pelo dó central.
+// - Ritmo: cada tempo é alinhado à semicolcheia ou à tercina, o que errar
+//   menos. Colcheias "swingadas" viram colcheias normais com a indicação Swing.
+// - Marcadores do arquivo viram seções. A bateria (canal 10) fica de fora.
 
-const UNITS_PER_QUARTER = 4; // semicolcheia = 1
+import {
+  beatLength,
+  DIVISIONS,
+  measureAt,
+  measuresUntil,
+  writeMusicXml,
+  type Measure,
+  type XmlNote,
+  type XmlPart,
+} from "./musicxml";
 
 export interface MidiNote {
   start: number; // em ticks
@@ -16,12 +28,16 @@ export interface MidiNote {
   pitch: number;
   velocity: number;
   track: number;
+  channel: number;
 }
 
 export interface ParsedMidi {
   division: number;
   notes: MidiNote[];
   trackNames: string[];
+  /** Programa de cada "faixa:canal" (primeiro program change). */
+  programs: Map<string, number>;
+  markers: { tick: number; text: string }[];
   title: string;
   tempos: { tick: number; bpm: number }[];
   timeSignatures: { tick: number; num: number; den: number }[];
@@ -29,11 +45,7 @@ export interface ParsedMidi {
 }
 
 export const isMidi = (data: Uint8Array) =>
-  data.length > 14 &&
-  data[0] === 0x4d &&
-  data[1] === 0x54 &&
-  data[2] === 0x68 &&
-  data[3] === 0x64;
+  data.length > 14 && data[0] === 0x4d && data[1] === 0x54 && data[2] === 0x68 && data[3] === 0x64;
 
 /** Texto de um evento: UTF-8 se for válido, senão Latin-1. */
 const text = (bytes: Uint8Array) => {
@@ -50,13 +62,14 @@ export function parseMidi(data: Uint8Array): ParsedMidi {
   const headerLength = view.getUint32(4);
   const tracks = view.getUint16(10);
   const division = view.getUint16(12);
-  if (division & 0x8000)
-    throw new Error("MIDI com tempo SMPTE não é suportado");
+  if (division & 0x8000) throw new Error("MIDI com tempo SMPTE não é suportado");
 
   const result: ParsedMidi = {
     division,
     notes: [],
     trackNames: [],
+    programs: new Map(),
+    markers: [],
     title: "",
     tempos: [],
     timeSignatures: [],
@@ -98,8 +111,8 @@ export function parseMidi(data: Uint8Array): ParsedMidi {
         const len = vlq();
         const body = data.subarray(p, p + len);
         p += len;
-        if (meta === 0x03 && !result.trackNames[t])
-          result.trackNames[t] = text(body).trim();
+        if (meta === 0x03 && !result.trackNames[t]) result.trackNames[t] = text(body).trim();
+        else if (meta === 0x06 && len) result.markers.push({ tick, text: text(body).trim() });
         else if (meta === 0x51 && len === 3) {
           const us = (body[0] << 16) | (body[1] << 8) | body[2];
           if (us > 0) result.tempos.push({ tick, bpm: 60_000_000 / us });
@@ -118,7 +131,12 @@ export function parseMidi(data: Uint8Array): ParsedMidi {
       const a = data[p++];
       const b = type === 0xc0 || type === 0xd0 ? 0 : data[p++];
       if (channel === 9) continue; // bateria
-      const id = a;
+      const key = `${t}:${channel}`;
+      if (type === 0xc0) {
+        if (!result.programs.has(key)) result.programs.set(key, a);
+        continue;
+      }
+      const id = (channel << 8) | a;
       if (type === 0x90 && b > 0) {
         const list = open.get(id) ?? [];
         list.push({ start: tick, velocity: b });
@@ -132,20 +150,22 @@ export function parseMidi(data: Uint8Array): ParsedMidi {
             pitch: a,
             velocity: on.velocity,
             track: t,
+            channel,
           });
         }
       }
     }
     // Notas que nunca desligaram terminam no fim da faixa.
-    for (const [pitch, list] of open) {
+    for (const [id, list] of open) {
       for (const on of list) {
         if (tick > on.start) {
           result.notes.push({
             start: on.start,
             end: tick,
-            pitch,
+            pitch: id & 0xff,
             velocity: on.velocity,
             track: t,
+            channel: id >> 8,
           });
         }
       }
@@ -155,30 +175,19 @@ export function parseMidi(data: Uint8Array): ParsedMidi {
   // O título é o nome da primeira faixa quando ela não tem notas (faixa de
   // regência, como no formato 1).
   const first = result.trackNames[0] ?? "";
-  if (
-    first &&
-    !result.notes.some((n) => n.track === 0) &&
-    !isGenericName(first)
-  ) {
+  if (first && !result.notes.some((n) => n.track === 0) && !isGenericName(first)) {
     result.title = first;
   }
   result.notes.sort((x, y) => x.start - y.start || x.pitch - y.pitch);
+  result.markers.sort((x, y) => x.tick - y.tick);
   return result;
 }
 
 const isGenericName = (name: string) =>
-  /^(track|faixa|untitled|sem título)\s*\d*$/i.test(name);
+  /^(track|faixa|untitled|sem título|channel|canal)?\s*\d*$/i.test(name.trim());
 
 const RIGHT = ["right", "rh", "direita", "md", "treble", "melody", "melodia"];
-const LEFT = [
-  "left",
-  "lh",
-  "esquerda",
-  "me",
-  "bass",
-  "baixo",
-  "acompanhamento",
-];
+const LEFT = ["left", "lh", "esquerda", "me", "bass", "baixo", "acompanhamento"];
 
 /** "Piano RH", "Mão direita"… → 0 (direita), 1 (esquerda) ou null. */
 function handOfName(name: string): number | null {
@@ -191,386 +200,255 @@ function handOfName(name: string): number | null {
   return null;
 }
 
-/** Mão de cada nota: 0 = direita (clave de sol), 1 = esquerda (clave de fá). */
-export function splitHands(notes: MidiNote[], trackNames: string[]): number[] {
-  const tracks = [...new Set(notes.map((n) => n.track))];
-  if (tracks.length === 2) {
-    const [a, b] = tracks;
-    const name = (t: number) => trackNames[t] ?? "";
-    let right: number | null = null;
-    const ha = handOfName(name(a));
-    const hb = handOfName(name(b));
+/**
+ * Mão de cada nota: 0 = direita (clave de sol), 1 = esquerda (clave de fá).
+ * `group` diz de que faixa a nota veio e `names` dá o nome de cada faixa.
+ */
+export function splitHands(
+  notes: { pitch: number }[],
+  group: (i: number) => number,
+  names: string[],
+): number[] {
+  const groups = [...new Set(notes.map((_, i) => group(i)))];
+  if (groups.length === 2) {
+    const [a, b] = groups;
+    const ha = handOfName(names[a] ?? "");
+    const hb = handOfName(names[b] ?? "");
+    let right: number;
     if (ha === 0 || hb === 1) right = a;
     else if (hb === 0 || ha === 1) right = b;
     else {
-      const mean = (t: number) => {
-        const list = notes.filter((n) => n.track === t);
+      const mean = (g: number) => {
+        const list = notes.filter((_, i) => group(i) === g);
         return list.reduce((s, n) => s + n.pitch, 0) / list.length;
       };
       right = mean(a) >= mean(b) ? a : b;
     }
-    return notes.map((n) => (n.track === right ? 0 : 1));
+    return notes.map((_, i) => (group(i) === right ? 0 : 1));
   }
   return notes.map((n) => (n.pitch >= 60 ? 0 : 1));
 }
 
-interface Item {
-  start: number; // em unidades (semicolcheias)
-  end: number;
-  pitches: number[];
-  velocity: number;
+/** Família General MIDI, em português (programa 0 a 127). */
+const FAMILIES = [
+  "Piano", "Percussão cromática", "Órgão", "Violão", "Baixo", "Cordas", "Conjunto",
+  "Metais", "Palhetas", "Flauta", "Synth lead", "Synth pad", "Efeitos de synth",
+  "Étnicos", "Percussão", "Efeitos",
+];
+
+const isPiano = (program: number) => program <= 7;
+
+// --------------------------------------------------------------- ritmo
+
+/** Margem (em unidades) para uma nota "quase no tempo" contar no tempo seguinte. */
+const SLACK = 1.5;
+
+interface Grid {
+  /** Grade de cada tempo: 3 = semicolcheia, 4 = tercina; chave "pauta:compasso:tempo". */
+  grid: Map<string, number>;
+  /** Tempos em swing: a colcheia em 8/12 vira 6/12. */
+  swing: Set<string>;
 }
 
-/** Distribui os acordes de uma pauta em até duas vozes. */
-function voices(
-  notes: { start: number; end: number; pitch: number; velocity: number }[],
-) {
-  const groups = new Map<string, Item>();
-  for (const n of notes) {
-    const key = `${n.start}:${n.end}`;
-    const g = groups.get(key);
-    if (g) {
-      if (!g.pitches.includes(n.pitch)) g.pitches.push(n.pitch);
-      g.velocity = Math.max(g.velocity, n.velocity);
-    } else
-      groups.set(key, {
-        start: n.start,
-        end: n.end,
-        pitches: [n.pitch],
-        velocity: n.velocity,
-      });
-  }
-  const chords = [...groups.values()].sort(
-    (a, b) => a.start - b.start || b.end - a.end,
-  );
-  const result: Item[][] = [[], []];
-  for (const chord of chords) {
-    chord.pitches.sort((a, b) => a - b);
-    const cursor = (v: Item[]) => (v.length ? v[v.length - 1].end : 0);
-    let voice = result.find((v) => cursor(v) <= chord.start);
-    if (!voice) {
-      // Mesma hora de início: junta ao acorde, com a duração mais curta.
-      const same = result.find(
-        (v) => v.length && v[v.length - 1].start === chord.start,
-      );
-      if (same) {
-        const last = same[same.length - 1];
-        last.end = Math.min(last.end, chord.end);
-        for (const p of chord.pitches)
-          if (!last.pitches.includes(p)) last.pitches.push(p);
-        last.pitches.sort((a, b) => a - b);
-        continue;
-      }
-      // Senão encurta a nota que termina antes e entra no lugar dela.
-      voice = result.reduce((a, b) => (cursor(a) <= cursor(b) ? a : b));
-      voice[voice.length - 1].end = chord.start;
+const beatOf = (measures: Measure[], u: number) => {
+  const m = measureAt(measures, u + SLACK);
+  const beat = beatLength(m.num, m.den);
+  const b = Math.min(Math.floor((u + SLACK - m.start) / beat), Math.ceil(m.length / beat) - 1);
+  return { m, beat, b, start: m.start + b * beat };
+};
+
+/** Escolhe a grade de cada tempo de cada pauta e detecta swing. */
+function chooseGrid(staves: number[][], measures: Measure[]): Grid {
+  const offsets = new Map<string, number[]>();
+  staves.forEach((points, s) => {
+    for (const u of points) {
+      const { m, beat, b, start } = beatOf(measures, u);
+      if (beat !== 12) continue;
+      const key = `${s}:${m.start}:${b}`;
+      const list = offsets.get(key) ?? [];
+      list.push(u - start);
+      offsets.set(key, list);
     }
-    voice.push(chord);
+  });
+  const grid = new Map<string, number>();
+  const err = (list: number[], g: number) =>
+    list.reduce((sum, o) => sum + Math.abs(o - Math.round(o / g) * g), 0);
+  const snapped = new Map<string, number[]>();
+  for (const [key, list] of offsets) {
+    const e3 = err(list, 3);
+    const e4 = err(list, 4);
+    const asTriplet = list.map((o) => Math.round(o / 4) * 4);
+    const g = e4 < e3 * 0.6 && asTriplet.some((o) => o === 4 || o === 8) ? 4 : 3;
+    grid.set(key, g);
+    snapped.set(key, g === 4 ? asTriplet : list.map((o) => Math.round(o / 3) * 3));
   }
-  return result;
+
+  // Swing: a maioria das colcheias de contratempo cai em 2/3 do tempo.
+  const swingKeys: string[] = [];
+  let straight = 0;
+  let triplets = 0;
+  for (const [key, list] of snapped) {
+    const inner = list.filter((o) => o > 0 && o < 12);
+    if (!inner.length) continue;
+    if (grid.get(key) === 4) {
+      if (inner.every((o) => o === 8)) swingKeys.push(key);
+      else triplets++;
+    } else if (inner.includes(6)) straight++;
+  }
+  const swing = new Set<string>();
+  if (swingKeys.length >= 8 && swingKeys.length > 3 * (straight + triplets)) {
+    for (const key of swingKeys) {
+      swing.add(key);
+      grid.set(key, 3);
+    }
+  }
+  return { grid, swing };
 }
 
-const STEPS_SHARP: [string, number][] = [
-  ["C", 0],
-  ["C", 1],
-  ["D", 0],
-  ["D", 1],
-  ["E", 0],
-  ["F", 0],
-  ["F", 1],
-  ["G", 0],
-  ["G", 1],
-  ["A", 0],
-  ["A", 1],
-  ["B", 0],
-];
-const STEPS_FLAT: [string, number][] = [
-  ["C", 0],
-  ["D", -1],
-  ["D", 0],
-  ["E", -1],
-  ["E", 0],
-  ["F", 0],
-  ["G", -1],
-  ["G", 0],
-  ["A", -1],
-  ["A", 0],
-  ["B", -1],
-  ["B", 0],
-];
-
-const DURATIONS: [number, string, boolean][] = [
-  [16, "whole", false],
-  [12, "half", true],
-  [8, "half", false],
-  [6, "quarter", true],
-  [4, "quarter", false],
-  [3, "eighth", true],
-  [2, "eighth", false],
-  [1, "16th", false],
-];
-
-/** Divide uma duração em figuras, alinhadas aos tempos quando possível. */
-function figures(start: number, length: number, beat: number) {
-  const out: number[] = [];
-  let pos = start;
-  let left = length;
-  while (left > 0) {
-    const toBeat = beat - (pos % beat);
-    // Fora do tempo, completa só até o próximo tempo.
-    const limit = pos % beat ? Math.min(left, toBeat) : left;
-    const d = DURATIONS.find(([u]) => u <= limit)![0];
-    out.push(d);
-    pos += d;
-    left -= d;
+/** Alinha uma posição (em unidades, fracionária) à grade do seu tempo. */
+function snap(u: number, staff: number, measures: Measure[], g: Grid) {
+  const { m, beat, b, start } = beatOf(measures, u);
+  const key = `${staff}:${m.start}:${b}`;
+  const step = beat === 12 ? (g.grid.get(key) ?? 3) : 3;
+  if (g.swing.has(key)) {
+    // Em swing, o que cai em 2/3 do tempo é a segunda colcheia.
+    const o = Math.round((u - start) / 4) * 4;
+    return start + (o === 8 ? 6 : o);
   }
-  return out;
+  return start + Math.round((u - start) / step) * step;
 }
 
-const escape = (s: string) =>
-  s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+// --------------------------------------------------------------- conversão
 
 export function midiToMusicXml(data: Uint8Array, fallbackTitle = ""): string {
   const midi = parseMidi(data);
   if (!midi.notes.length) throw new Error("O arquivo MIDI não tem notas");
-  const q = (tick: number) =>
-    Math.round((tick / midi.division) * UNITS_PER_QUARTER);
+  const units = (tick: number) => (tick / midi.division) * DIVISIONS;
 
-  // Compassos, a partir das fórmulas de compasso.
-  const sigs = midi.timeSignatures
-    .map((s) => ({
-      unit: q(s.tick),
-      num: s.num || 4,
-      den: Math.min(16, s.den || 4),
-    }))
-    .sort((a, b) => a.unit - b.unit);
-  if (!sigs.length || sigs[0].unit > 0)
-    sigs.unshift({ unit: 0, num: 4, den: 4 });
-  const hands = splitHands(midi.notes, midi.trackNames);
-  const staffNotes: {
-    start: number;
-    end: number;
-    pitch: number;
-    velocity: number;
-  }[][] = [[], []];
-  midi.notes.forEach((n, i) => {
-    const start = q(n.start);
-    const end = Math.max(start + 1, q(n.end));
-    staffNotes[hands[i]].push({
-      start,
-      end,
-      pitch: n.pitch,
-      velocity: n.velocity,
-    });
-  });
-  const lastEnd = Math.max(...midi.notes.map((n) => q(n.end)), 1);
+  // Instrumentos: cada faixa + canal com notas.
+  interface Group {
+    key: string;
+    name: string;
+    program: number;
+    notes: MidiNote[];
+  }
+  const groups: Group[] = [];
+  const byKey = new Map<string, Group>();
+  for (const n of midi.notes) {
+    const key = `${n.track}:${n.channel}`;
+    let g = byKey.get(key);
+    if (!g) {
+      const name = midi.trackNames[n.track] ?? "";
+      g = {
+        key,
+        name: isGenericName(name) ? "" : name,
+        program: midi.programs.get(key) ?? 0,
+        notes: [],
+      };
+      byKey.set(key, g);
+      groups.push(g);
+    }
+    g.notes.push(n);
+  }
+  const allPiano = groups.length === 1 || groups.every((g) => isPiano(g.program));
+  const pianos = allPiano ? groups : groups.filter((g) => isPiano(g.program));
+  const others = allPiano ? [] : groups.filter((g) => !isPiano(g.program));
 
-  const measures: {
-    start: number;
-    length: number;
-    num: number;
-    den: number;
-    newSig: boolean;
-  }[] = [];
-  for (let pos = 0, s = 0; pos < lastEnd; ) {
-    while (s + 1 < sigs.length && sigs[s + 1].unit <= pos) s++;
-    const { num, den } = sigs[s];
-    const length = Math.max(1, Math.round((num * 16) / den));
-    const prev = measures[measures.length - 1];
-    measures.push({
-      start: pos,
-      length,
-      num,
-      den,
-      newSig: !prev || prev.num !== num || prev.den !== den,
+  // Pautas: o piano tem duas; os outros instrumentos, uma.
+  interface StaffSpec {
+    clef: "G" | "F";
+    notes: MidiNote[];
+  }
+  const partSpecs: { name: string; program: number; staves: StaffSpec[] }[] = [];
+  if (pianos.length) {
+    const notes = pianos.flatMap((g) => g.notes).sort((a, b) => a.start - b.start);
+    const index = new Map(pianos.map((g, i) => [g.key, i]));
+    const hands = splitHands(
+      notes,
+      (i) => index.get(`${notes[i].track}:${notes[i].channel}`)!,
+      pianos.map((g) => g.name),
+    );
+    partSpecs.push({
+      name: "Piano",
+      program: allPiano ? 0 : pianos[0].program,
+      staves: [
+        { clef: "G", notes: notes.filter((_, i) => hands[i] === 0) },
+        { clef: "F", notes: notes.filter((_, i) => hands[i] === 1) },
+      ],
     });
-    pos += length;
+  }
+  const used = new Map<string, number>();
+  for (const g of others) {
+    const base = g.name || FAMILIES[g.program >> 3];
+    const count = (used.get(base) ?? 0) + 1;
+    used.set(base, count);
+    const mean = g.notes.reduce((s, n) => s + n.pitch, 0) / g.notes.length;
+    const bass = g.program >= 32 && g.program <= 39;
+    partSpecs.push({
+      name: count > 1 ? `${base} ${count}` : base,
+      program: g.program,
+      staves: [{ clef: bass || mean < 55 ? "F" : "G", notes: g.notes }],
+    });
   }
 
-  const staffVoices = staffNotes.map((list) => voices(list));
-  const fifths = Math.max(-7, Math.min(7, midi.key?.fifths ?? 0));
-  const steps = fifths < 0 ? STEPS_FLAT : STEPS_SHARP;
+  // Compassos e grade rítmica.
+  const timeSignatures = midi.timeSignatures.map((s) => ({
+    unit: Math.round(units(s.tick) / 3) * 3,
+    num: s.num || 4,
+    den: Math.min(16, s.den || 4),
+  }));
+  const lastTick = Math.max(...midi.notes.map((n) => n.end));
+  const measures = measuresUntil(timeSignatures, units(lastTick) + 48);
+  const allStaves = partSpecs.flatMap((p) => p.staves);
+  const grid = chooseGrid(
+    allStaves.map((s) => s.notes.flatMap((n) => [units(n.start), units(n.end)])),
+    measures,
+  );
 
-  const tempos = midi.tempos
-    .map((t) => ({ unit: q(t.tick), bpm: Math.round(t.bpm) }))
-    .filter((t, i, list) => i === 0 || t.bpm !== list[i - 1].bpm);
-  if (!tempos.length) tempos.push({ unit: 0, bpm: 120 });
+  let staffIndex = 0;
+  const parts: XmlPart[] = partSpecs.map((p) => ({
+    name: p.name,
+    program: p.program,
+    staves: p.staves.map((s) => {
+      const si = staffIndex++;
+      return {
+        clef: s.clef,
+        notes: s.notes.map((n): XmlNote => {
+          const start = snap(units(n.start), si, measures, grid);
+          let end = snap(units(n.end), si, measures, grid);
+          if (end <= start) {
+            // Nota curta demais: ocupa um passo da grade.
+            const { m, beat, b } = beatOf(measures, start);
+            const step = beat === 12 ? (grid.grid.get(`${si}:${m.start}:${b}`) ?? 3) : 3;
+            end = start + step;
+          }
+          return { start, end, pitch: n.pitch, velocity: n.velocity };
+        }),
+      };
+    }),
+  }));
 
-  const noteXml = (
-    pitch: number | null,
-    duration: number,
-    type: [string, boolean],
-    voice: number,
-    staff: number,
-    opts: {
-      chord?: boolean;
-      tieStart?: boolean;
-      tieStop?: boolean;
-      dynamics?: number;
-      hidden?: boolean;
-    },
-  ) => {
-    const parts: string[] = [];
-    parts.push(
-      opts.dynamics
-        ? `<note dynamics="${opts.dynamics}">`
-        : opts.hidden
-          ? '<note print-object="no">'
-          : "<note>",
-    );
-    if (opts.chord) parts.push("<chord/>");
-    if (pitch === null) parts.push("<rest/>");
-    else {
-      const [step, alter] = steps[pitch % 12];
-      parts.push(
-        `<pitch><step>${step}</step>${alter ? `<alter>${alter}</alter>` : ""}<octave>${Math.floor(pitch / 12) - 1}</octave></pitch>`,
-      );
-    }
-    parts.push(`<duration>${duration}</duration>`);
-    if (opts.tieStop) parts.push('<tie type="stop"/>');
-    if (opts.tieStart) parts.push('<tie type="start"/>');
-    parts.push(`<voice>${voice}</voice><type>${type[0]}</type>`);
-    if (type[1]) parts.push("<dot/>");
-    parts.push(`<staff>${staff}</staff>`);
-    if (opts.tieStart || opts.tieStop) {
-      parts.push("<notations>");
-      if (opts.tieStop) parts.push('<tied type="stop"/>');
-      if (opts.tieStart) parts.push('<tied type="start"/>');
-      parts.push("</notations>");
-    }
-    parts.push("</note>");
-    return parts.join("");
-  };
+  const sections = midi.markers
+    .filter((mk) => mk.text && !/^(start|end|fim|início)$/i.test(mk.text))
+    .map((mk) => ({ unit: measureAt(measures, units(mk.tick) + SLACK).start, name: mk.text }))
+    .filter((s, i, list) => i === 0 || s.unit !== list[i - 1].unit);
 
-  /** Escreve uma voz dentro de um compasso; devolve o XML (vazio se não há notas). */
-  const writeVoice = (
-    items: Item[],
-    m: (typeof measures)[number],
-    voice: number,
-    staff: number,
-    required: boolean,
-  ) => {
-    const mEnd = m.start + m.length;
-    const inside = items.filter((it) => it.start < mEnd && it.end > m.start);
-    if (!inside.length && !required) return "";
-    const beat = m.den === 8 && m.num % 3 === 0 && m.num > 3 ? 6 : 16 / m.den;
-    const xml: string[] = [];
-    let pos = m.start;
-    const rest = (until: number) => {
-      for (const d of figures(pos - m.start, until - pos, beat)) {
-        const [, type, dot] = DURATIONS.find(([u]) => u === d)!;
-        xml.push(
-          noteXml(null, d, [type, dot], voice, staff, { hidden: !required }),
-        );
-      }
-      pos = until;
-    };
-    if (!inside.length) {
-      // Compasso vazio: pausa de compasso inteiro.
-      xml.push(
-        `<note><rest measure="yes"/><duration>${m.length}</duration><voice>${voice}</voice><staff>${staff}</staff></note>`,
-      );
-      return xml.join("");
-    }
-    for (const it of inside) {
-      const s = Math.max(it.start, m.start);
-      const e = Math.min(it.end, mEnd);
-      if (s > pos) rest(s);
-      if (s < pos) continue; // sobreposição que sobrou: ignora
-      const pieces = figures(s - m.start, e - s, beat);
-      let at = s;
-      pieces.forEach((d, i) => {
-        const [, type, dot] = DURATIONS.find(([u]) => u === d)!;
-        const tieStop = at > it.start;
-        const tieStart = at + d < it.end;
-        it.pitches.forEach((p, j) => {
-          xml.push(
-            noteXml(p, d, [type, dot], voice, staff, {
-              chord: j > 0,
-              tieStart,
-              tieStop,
-              dynamics:
-                i === 0 && !tieStop
-                  ? Math.round((it.velocity / 90) * 100)
-                  : undefined,
-            }),
-          );
-        });
-        at += d;
-      });
-      pos = e;
-    }
-    if (pos < mEnd) rest(mEnd);
-    return xml.join("");
-  };
-
-  const body: string[] = [];
-  measures.forEach((m, index) => {
-    const out: string[] = [`<measure number="${index + 1}">`];
-    if (index === 0 || m.newSig) {
-      out.push("<attributes>");
-      if (index === 0) out.push(`<divisions>${UNITS_PER_QUARTER}</divisions>`);
-      if (index === 0)
-        out.push(
-          `<key><fifths>${fifths}</fifths>${midi.key?.minor ? "<mode>minor</mode>" : "<mode>major</mode>"}</key>`,
-        );
-      out.push(
-        `<time><beats>${m.num}</beats><beat-type>${m.den}</beat-type></time>`,
-      );
-      if (index === 0) {
-        out.push("<staves>2</staves>");
-        out.push('<clef number="1"><sign>G</sign><line>2</line></clef>');
-        out.push('<clef number="2"><sign>F</sign><line>4</line></clef>');
-      }
-      out.push("</attributes>");
-    }
-    for (const t of tempos) {
-      if (t.unit >= m.start && t.unit < m.start + m.length) {
-        out.push(
-          `<direction placement="above"><direction-type><metronome><beat-unit>quarter</beat-unit><per-minute>${t.bpm}</per-minute></metronome></direction-type><staff>1</staff><sound tempo="${t.bpm}"/></direction>`,
-        );
-      }
-    }
-    let first = true;
-    staffVoices.forEach((vs, s) => {
-      vs.forEach((items, v) => {
-        const xml = writeVoice(items, m, s * 4 + v + 1, s + 1, v === 0);
-        if (!xml) return;
-        if (!first)
-          out.push(`<backup><duration>${m.length}</duration></backup>`);
-        out.push(xml);
-        first = false;
-      });
-    });
-    out.push("</measure>");
-    body.push(out.join(""));
+  return writeMusicXml({
+    title: midi.title || fallbackTitle,
+    software: "PartiTAB (convertido de MIDI)",
+    fifths: midi.key?.fifths ?? 0,
+    minor: midi.key?.minor ?? false,
+    timeSignatures,
+    tempos: midi.tempos.length
+      ? midi.tempos.map((t) => ({ unit: Math.round(units(t.tick) / 3) * 3, bpm: Math.round(t.bpm) }))
+      : [{ unit: 0, bpm: 120 }],
+    sections,
+    words: grid.swing.size ? [{ unit: 0, text: "Swing" }] : [],
+    parts,
   });
-
-  const title = escape(midi.title || fallbackTitle);
-  return [
-    '<?xml version="1.0" encoding="UTF-8"?>',
-    '<!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 4.0 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">',
-    '<score-partwise version="4.0">',
-    title ? `<work><work-title>${title}</work-title></work>` : "",
-    "<identification><encoding><software>PartiTAB (convertido de MIDI)</software></encoding></identification>",
-    '<part-list><score-part id="P1"><part-name>Piano</part-name>',
-    '<score-instrument id="P1-I1"><instrument-name>Piano</instrument-name></score-instrument>',
-    '<midi-instrument id="P1-I1"><midi-channel>1</midi-channel><midi-program>1</midi-program></midi-instrument>',
-    "</score-part></part-list>",
-    '<part id="P1">',
-    ...body,
-    "</part>",
-    "</score-partwise>",
-  ].join("\n");
 }
 
 /** Bytes de partitura que o alphaTab entende: MIDI vira MusicXML. */
 export function toScoreBytes(data: Uint8Array, fallbackTitle = ""): Uint8Array {
-  return isMidi(data)
-    ? new TextEncoder().encode(midiToMusicXml(data, fallbackTitle))
-    : data;
+  return isMidi(data) ? new TextEncoder().encode(midiToMusicXml(data, fallbackTitle)) : data;
 }

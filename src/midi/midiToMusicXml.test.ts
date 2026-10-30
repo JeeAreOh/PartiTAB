@@ -146,11 +146,13 @@ describe("MIDI → MusicXML", () => {
     const high = track([...note(70, 0, 4)], "Piano LH");
     const notes = parseMidi(midiFile([low, high]));
     // O nome manda, mesmo com a direita mais grave.
-    expect(splitHands(notes.notes, notes.trackNames)).toEqual([0, 1]);
+    expect(splitHands(notes.notes, (i) => notes.notes[i].track, notes.trackNames)).toEqual([0, 1]);
     const unnamed = parseMidi(
       midiFile([track(note(50, 0, 4)), track(note(70, 0, 4))]),
     );
-    expect(splitHands(unnamed.notes, unnamed.trackNames)).toEqual([1, 0]);
+    expect(splitHands(unnamed.notes, (i) => unnamed.notes[i].track, unnamed.trackNames)).toEqual([
+      1, 0,
+    ]);
   });
 
   it("liga notas que atravessam a barra e mantém o total de compassos", () => {
@@ -211,5 +213,69 @@ describe("MIDI → MusicXML", () => {
     );
     const score = load(data);
     expect(pitches(score, 0).flat()).toEqual([60, 62]);
+  });
+
+  it("banda: pianos juntos em duas pautas, outros instrumentos em faixas próprias", () => {
+    const program = (channel: number, p: number): Ev => [0, 0xc0 | channel, p];
+    const piano = track([program(0, 0), ...note(72, 0, 1, 0), ...note(48, 0, 1, 0)], "Piano");
+    const bass = track([program(1, 33), ...note(40, 0, 2, 1)]);
+    const flute = track([program(2, 73), ...note(79, 0, 1, 2)], "Flauta");
+    const drums = track(note(36, 0, 1, 9));
+    const score = load(midiFile([piano, bass, flute, drums]));
+    expect(score.tracks.map((t) => t.name)).toEqual(["Piano", "Baixo", "Flauta"]);
+    expect(score.tracks[0].staves).toHaveLength(2);
+    expect(score.tracks[1].playbackInfo.program).toBe(33);
+    expect(score.tracks[2].playbackInfo.program).toBe(73);
+    expect(pitches(score, 0)).toEqual([[72]]);
+    expect(pitches(score, 1)).toEqual([[48]]);
+    expect(score.tracks[1].staves[0].bars[0].voices[0].beats[0].notes[0].realValue).toBe(40);
+  });
+
+  it("formato 0 com vários canais também separa os instrumentos", () => {
+    const one = track([[0, 0xc1, 40], ...note(60, 0, 1, 0), ...note(76, 0, 1, 1)]);
+    const score = load(midiFile([one]));
+    expect(score.tracks.map((t) => t.name)).toEqual(["Piano", "Cordas"]);
+  });
+
+  it("reconhece tercinas", () => {
+    const third = 1 / 3;
+    const data = midiFile([
+      track([
+        ...note(60, 0, third),
+        ...note(62, third, third),
+        ...note(64, 2 * third, third),
+        ...note(65, 1, 0.5),
+        ...note(67, 1.5, 0.5),
+        ...note(69, 2, 2),
+      ]),
+    ]);
+    const beats = load(data).tracks[0].staves[0].bars[0].voices[0].beats;
+    expect(beats.map((b) => b.notes[0]?.realValue)).toEqual([60, 62, 64, 65, 67, 69]);
+    expect(beats.slice(0, 3).every((b) => b.tupletNumerator === 3)).toBe(true);
+    expect(beats[3].tupletNumerator).not.toBe(3);
+    expect(beats[3].duration).toBe(alphaTab.model.Duration.Eighth);
+  });
+
+  it("colcheias em swing viram colcheias normais com a indicação Swing", () => {
+    const events: Ev[] = [];
+    for (let beat = 0; beat < 16; beat++) {
+      events.push(...note(60 + (beat % 5), beat, 2 / 3), ...note(62, beat + 2 / 3, 1 / 3));
+    }
+    const xml = midiToMusicXml(midiFile([track(events)]));
+    expect(xml).toContain("<words>Swing</words>");
+    expect(xml).not.toContain("time-modification");
+    const beats = load(midiFile([track(events)])).tracks[0].staves[0].bars[0].voices[0].beats;
+    expect(beats.map((b) => b.duration)).toEqual(
+      Array(8).fill(alphaTab.model.Duration.Eighth),
+    );
+  });
+
+  it("marcadores viram seções", () => {
+    const conductor = track([
+      [0, 0xff, 0x06, 5, ..."Intro".split("").map((c) => c.charCodeAt(0))],
+      [4 * PPQ, 0xff, 0x06, 6, ..."Refrao".split("").map((c) => c.charCodeAt(0))],
+    ]);
+    const score = load(midiFile([conductor, track([...note(60, 0, 4), ...note(62, 4, 4)])]));
+    expect(score.masterBars.map((m) => m.section?.marker ?? null)).toEqual(["Intro", "Refrao"]);
   });
 });

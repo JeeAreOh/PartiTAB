@@ -7,6 +7,9 @@ import { Library } from "./library/Library";
 import { Cover } from "./library/Cover";
 import { parsePrefs, readMetadata, useLibrary, type SongPrefs } from "./library/useLibrary";
 import { toScoreBytes } from "./midi/midiToMusicXml";
+import { mergeSections, sectionLabel, type SongSection } from "./practice/sections";
+import { exerciseTitle, exerciseXml, type Exercise } from "./technique/exercises";
+import { TECHNIQUE_ARTIST, Technique } from "./technique/Technique";
 import { LEVELS, type Level } from "./reducer/reduce";
 import { estimateDifficulty } from "./reducer/harmony";
 import { usePractice, type Mode } from "./practice/usePractice";
@@ -36,6 +39,7 @@ import type { HandChoice } from "./practice/timeline";
 import "./App.css";
 
 const LAST_PORT = "partitab.midiPort";
+const KEYBOARD_SOUND = "partitab.keyboardSound";
 const LAST_SOUNDFONT = "partitab.soundfont";
 /** Caminho da última partitura (versões antes da biblioteca). */
 const LAST_SCORE = "partitab.score";
@@ -134,7 +138,7 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [currentId, setCurrentId] = useState<number | null>(null);
-  const [view, setView] = useState<"library" | "score" | "reading" | "progress" | "search">(
+  const [view, setView] = useState<"library" | "score" | "reading" | "technique" | "progress" | "search">(
     "score",
   );
   /** Muda a cada prática gravada (o painel de progresso recarrega). */
@@ -145,6 +149,7 @@ function App() {
   /** Treino dos piores trechos: um trecho por vez, até dominar. */
   const [drill, setDrill] = useState<{ segments: Segment[]; index: number } | null>(null);
   const [barFrom, setBarFrom] = useState("");
+  const [sectionName, setSectionName] = useState("");
   const [barTo, setBarTo] = useState("");
   const [downloads, setDownloads] = useState<DownloadResult[]>([]);
   const [searchLog, setSearchLog] = useState<SearchLogEntry[]>([]);
@@ -262,13 +267,14 @@ function App() {
           : null;
       // O vídeo da música anterior sai antes de carregar a nova.
       score.setMedia(null, [], false);
+      score.setSections(prefs.sections ?? [], false);
       if (!score.load(data, options, options ? undefined : prefs.track)) return;
       setVideo(prefs.video ?? null);
       setCurrentId(song.id);
       storage.set(LAST_SONG, String(song.id));
       setView("score");
     },
-    [score.load, score.setMedia],
+    [score.load, score.setMedia, score.setSections],
   );
 
   /** Abre um arquivo do disco: entra na biblioteca (sem duplicar) e abre. */
@@ -297,6 +303,10 @@ function App() {
           });
         }
         if (!current.soundfont) current = await api.loadDefaultSoundfont().catch(() => current);
+      }
+      // O som pelo teclado vale assim que o teclado conectar.
+      if (storage.get(KEYBOARD_SOUND) === "1") {
+        current = await api.setKeyboardSound(true).catch(() => current);
       }
       const port = storage.get(LAST_PORT);
       if (port && list.includes(port) && !current.midiPort) {
@@ -396,6 +406,20 @@ function App() {
       return next;
     });
 
+  const toggleKeyboardSound = (on: boolean) =>
+    run(async () => {
+      storage.set(KEYBOARD_SOUND, on ? "1" : null);
+      return api.setKeyboardSound(on);
+    });
+
+  // Com o som pelo teclado, a banda e o metrônomo do player vão para ele.
+  const keyboardSound = !!status?.keyboardSound && !!status.midiPort;
+  useEffect(() => {
+    score.setKeyboardOut(
+      keyboardSound ? (bytes) => void api.midiOut(bytes).catch(() => undefined) : null,
+    );
+  }, [keyboardSound, score.setKeyboardOut]);
+
   const disconnect = () =>
     run(async () => {
       storage.set(LAST_PORT, null);
@@ -471,6 +495,18 @@ function App() {
         }
       }
       if (failed.length) setError(`Não foi possível adicionar: ${failed.join(", ")}`);
+    });
+
+  /** Gera o exercício de técnica, guarda na biblioteca (sem duplicar) e abre. */
+  const practiceExercise = (ex: Exercise) =>
+    run(async () => {
+      const title = exerciseTitle(ex);
+      const data = new TextEncoder().encode(exerciseXml(ex));
+      const song = await library.importBytes(`${title}.musicxml`, data, title, TECHNIQUE_ARTIST);
+      if (song.style !== TECHNIQUE_ARTIST) {
+        await library.update(song.id, { style: TECHNIQUE_ARTIST });
+      }
+      await openSong(song);
     });
 
   // ------------------------------------------------------------- arranjo
@@ -572,6 +608,30 @@ function App() {
   };
 
   const rangeBars = state.range ? rangeToBars(barLookups(), state.range) : null;
+  const mySections = parsePrefs(currentSong).sections ?? [];
+  const sections = mergeSections(state.fileSections, mySections);
+  const rangeSection = rangeBars
+    ? sections.find((s) => s.from === rangeBars.from && s.to === rangeBars.to)
+    : undefined;
+
+  /** Guarda o trecho escolhido como seção da música. */
+  const saveSection = () => {
+    const name = sectionName.trim();
+    if (!rangeBars || !name) return;
+    const list = [
+      ...mySections.filter((s) => s.name !== name),
+      { name, from: rangeBars.from, to: rangeBars.to },
+    ].sort((a, b) => a.from - b.from);
+    savePrefs({ sections: list });
+    score.setSections(list);
+    setSectionName("");
+  };
+
+  const removeSection = (section: SongSection) => {
+    const list = mySections.filter((s) => s.name !== section.name || s.from !== section.from);
+    savePrefs({ sections: list });
+    score.setSections(list);
+  };
   const worst = worstSegments(errorBars);
 
   const startDrill = () => {
@@ -744,6 +804,7 @@ function App() {
               ["library", "library", "Biblioteca"],
               ["score", "score", "Partitura"],
               ["reading", "reading", "Leitura"],
+              ["technique", "technique", "Técnica"],
               ["progress", "heat", "Progresso"],
               ["search", "search", "Buscar"],
             ] as const
@@ -1191,7 +1252,11 @@ function App() {
               label={
                 <>
                   <Icon name="repeat" size={17} />
-                  {rangeBars ? `Compassos ${rangeBars.from + 1}–${rangeBars.to + 1}` : "Trecho"}
+                  {rangeSection
+                    ? rangeSection.name
+                    : rangeBars
+                      ? `Compassos ${rangeBars.from + 1}–${rangeBars.to + 1}`
+                      : "Trecho"}
                 </>
               }
               title="Repetir um trecho (loop A–B)"
@@ -1258,6 +1323,60 @@ function App() {
                     Limpar trecho
                   </button>
                 )}
+                <div className="sections">
+                  <h4>Seções</h4>
+                  {sections.length === 0 && (
+                    <p className="muted small">
+                      Escolha um trecho e dê um nome (Introdução, Refrão, parte difícil…) para
+                      voltar a ele com um clique.
+                    </p>
+                  )}
+                  {sections.map((s) => (
+                    <div key={`${s.mine}:${s.from}:${s.name}`} className="section-row">
+                      <button
+                        className={
+                          rangeBars && rangeBars.from === s.from && rangeBars.to === s.to
+                            ? "facet on"
+                            : "facet"
+                        }
+                        onClick={() => selectBars(s.from + 1, s.to + 1)}
+                      >
+                        {s.name}
+                        <span>{sectionLabel(s)}</span>
+                      </button>
+                      {s.mine && (
+                        <button
+                          className="icon-button"
+                          title="Apagar seção"
+                          aria-label={`Apagar a seção ${s.name}`}
+                          onClick={() => removeSection(s)}
+                        >
+                          <Icon name="close" size={14} />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  {rangeBars && currentSong && !rangeSection && (
+                    <form
+                      className="row"
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        saveSection();
+                      }}
+                    >
+                      <input
+                        value={sectionName}
+                        onChange={(e) => setSectionName(e.target.value)}
+                        placeholder="Nome do trecho (ex.: Refrão)"
+                        aria-label="Nome da seção"
+                        maxLength={40}
+                      />
+                      <button type="submit" disabled={!sectionName.trim()}>
+                        Salvar seção
+                      </button>
+                    </form>
+                  )}
+                </div>
                 <div className="worst">
                   <h4>Onde você mais erra</h4>
                   {worst.length === 0 ? (
@@ -1507,6 +1626,17 @@ function App() {
           </div>
         )}
 
+        {view === "technique" && (
+          <div className="layer">
+            <Technique
+              songs={library.songs}
+              busy={busy}
+              onPractice={practiceExercise}
+              onOpenSong={(song) => run(() => openSong(song))}
+            />
+          </div>
+        )}
+
         {view === "progress" && (
           <div className="layer">
             <Progress
@@ -1559,6 +1689,7 @@ function App() {
           onRefresh={() => run(async () => void (await refreshPorts()))}
           onConnect={connect}
           onDisconnect={disconnect}
+          onKeyboardSound={toggleKeyboardSound}
           onChooseSoundfont={chooseSoundfont}
           onUseDefaultSoundfont={resetSoundfont}
           onUseSoundfont={openSoundfont}

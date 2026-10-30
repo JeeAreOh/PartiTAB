@@ -13,6 +13,10 @@ export interface Status {
   audioError: string | null;
   midiPort: string | null;
   localControlOff: boolean;
+  /** O teclado conectado tem saída MIDI (dá para mandar som para ele). */
+  midiOutput: boolean;
+  /** O som sai pelo teclado (ele toca as próprias notas e a banda). */
+  keyboardSound: boolean;
   soundfont: string | null;
   /** O SoundFont carregado é o que acompanha o app. */
   soundfontBuiltin: boolean;
@@ -177,6 +181,8 @@ export const api = {
   },
   playNote: (key: number, velocity: number) => invoke<void>("play_note", { key, velocity }),
   playPedal: (down: boolean) => invoke<void>("play_pedal", { down }),
+  setKeyboardSound: (on: boolean) => invoke<Status>("set_keyboard_sound", { on }),
+  midiOut: (data: number[]) => invoke<void>("midi_out", { data }),
   readFile: (path: string) =>
     invoke<ArrayBuffer>("read_file", { path }).then((b) => new Uint8Array(b)),
   updates: {
