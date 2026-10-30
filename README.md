@@ -99,13 +99,11 @@ O instalador para Windows é gerado pelo GitHub Actions ([`.github/workflows/rel
 Para lançar uma versão:
 
 ```bash
-npm run version:set -- 0.2.0        # atualiza package.json, Cargo.toml e os lockfiles
-git commit -am "Versão 0.2.0"
-git tag v0.2.0
-git push && git push origin v0.2.0  # a tag dispara o build
+npm run version:set -- 0.2.0   # atualiza package.json, Cargo.toml e os lockfiles
+git commit -am "Versão 0.2.0" && git push
 ```
 
-O workflow roda os testes, gera `PartiTAB_<versão>_x64-setup.exe` (NSIS, em português) e o `.msi`, e cria a release `v<versão>` com os dois. A tag precisa bater com a versão do `package.json`. **Actions → Release Windows → Run workflow** gera o instalador sem publicar (fica como artefato da execução).
+Depois, no GitHub: **Actions → Release Windows → Run workflow** (com "Publicar" marcado). O workflow roda os testes, gera `PartiTAB_<versão>_x64-setup.exe` (NSIS, em português) e o `.msi`, cria a tag `v<versão>` e a release com os dois. Também dá para publicar empurrando a tag (`git tag v0.2.0 && git push origin v0.2.0`); a tag precisa bater com o `package.json`. Desmarcando "Publicar", só gera o instalador (fica como artefato da execução). Publicar de novo a mesma versão é recusado: suba a versão antes.
 
 **Atualização dentro do app.** Em **Ajustes → Atualizações** aparece a versão instalada. Como o repositório é privado, o app precisa de um token do GitHub para ler as releases: crie um *fine-grained personal access token* com acesso só a este repositório e permissão **Contents: Read-only**, e cole no campo. O token fica salvo só no computador (`atualizacao.json`, na pasta de dados do app). Com ele, o app verifica ao abrir; havendo versão nova, aparece um aviso no topo e o botão **Atualizar agora** baixa o instalador, abre e fecha o app — a biblioteca e os ajustes são mantidos. Sem token, **Ver todas as versões no GitHub** abre a página de releases no navegador.
 

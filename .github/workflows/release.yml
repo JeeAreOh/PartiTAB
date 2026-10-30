@@ -1,11 +1,17 @@
 name: Release Windows
 
-# Uma tag v1.2.3 gera o instalador e publica a release com ele.
-# "Run workflow" (manual) só gera o instalador, como artefato da execução.
+# Publica a versão do package.json como release com o instalador para Windows.
+# Dispara com uma tag v1.2.3 ou em Actions → Release Windows → Run workflow
+# (aí a própria release cria a tag). Sem "publicar", só gera o instalador.
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publicar a release v<versão do package.json>"
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -35,14 +41,28 @@ jobs:
       - name: Instalar dependências
         run: npm ci
 
-      - name: A tag bate com a versão do package.json
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Versão
+        id: version
         shell: bash
+        env:
+          PUBLISH_INPUT: ${{ inputs.publish }}
         run: |
           version=$(node -p "require('./package.json').version")
-          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
-            echo "::error::A tag $GITHUB_REF_NAME não bate com a versão $version do package.json (use npm run version:set)"
-            exit 1
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+              echo "::error::A tag $GITHUB_REF_NAME não bate com a versão $version do package.json (use npm run version:set)"
+              exit 1
+            fi
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          elif [ "$PUBLISH_INPUT" = "true" ]; then
+            if git ls-remote --exit-code --tags origin "refs/tags/v$version" > /dev/null; then
+              echo "::error::A versão v$version já foi publicada. Suba a versão com npm run version:set antes."
+              exit 1
+            fi
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Testes da interface
@@ -53,13 +73,14 @@ jobs:
         run: cargo test --locked
 
       - name: Gerar instalador e publicar release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: steps.version.outputs.publish == 'true'
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: PartiTAB ${{ github.ref_name }}
+          tagName: v${{ steps.version.outputs.version }}
+          releaseName: PartiTAB v${{ steps.version.outputs.version }}
+          releaseCommitish: ${{ github.sha }}
           releaseBody: |
             Instalador para Windows 10/11: baixe o arquivo `PartiTAB_..._x64-setup.exe` (ou o `.msi`).
             Quem já tem o PartiTAB pode atualizar em Ajustes → Atualizações.
@@ -67,7 +88,7 @@ jobs:
           prerelease: false
 
       - name: Gerar instalador (sem publicar)
-        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        if: steps.version.outputs.publish != 'true'
         uses: tauri-apps/tauri-action@v0
 
       - name: Guardar o instalador na execução
