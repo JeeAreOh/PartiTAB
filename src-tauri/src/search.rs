@@ -4,7 +4,7 @@
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
-use tauri::webview::DownloadEvent;
+use tauri::webview::{DownloadEvent, NewWindowResponse};
 use tauri::{AppHandle, Emitter, Manager, Url, WebviewUrl, WebviewWindowBuilder};
 
 use crate::LibraryState;
@@ -36,6 +36,11 @@ pub enum DownloadResult {
         file_name: String,
         reason: String,
     },
+}
+
+/// Endereços que a janela de busca segue quando o site pede uma janela nova.
+fn follows_in_same_window(url: &Url) -> bool {
+    matches!(url.scheme(), "http" | "https" | "blob")
 }
 
 pub fn is_score_file(path: &Path) -> bool {
@@ -108,9 +113,24 @@ pub fn open(app: &AppHandle, url: &str) -> Result<(), String> {
         .join("downloads");
     std::fs::create_dir_all(&downloads).map_err(|e| e.to_string())?;
 
+    let popup_app = app.clone();
     WebviewWindowBuilder::new(app, WINDOW, WebviewUrl::External(url))
         .title("Buscar partituras — os arquivos baixados vão para a biblioteca")
         .inner_size(1180.0, 820.0)
+        // Links que abririam outra aba ou janela (como o "Guitar Pro" do Cifra
+        // Club) abrem nesta mesma janela; sem isso o clique não faz nada.
+        .on_new_window(move |url, _features| {
+            if follows_in_same_window(&url) {
+                let app = popup_app.clone();
+                // Fora do callback do navegador: navegar dentro dele pode travar.
+                std::thread::spawn(move || {
+                    if let Some(window) = app.get_webview_window(WINDOW) {
+                        let _ = window.navigate(url);
+                    }
+                });
+            }
+            NewWindowResponse::Deny
+        })
         .on_download(move |webview, event| {
             match event {
                 DownloadEvent::Requested { url, destination } => {
@@ -157,6 +177,18 @@ pub fn open(app: &AppHandle, url: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn new_windows_open_in_the_search_window() {
+        let ok = |u: &str| follows_in_same_window(&u.parse().unwrap());
+        assert!(ok(
+            "https://www.cifraclub.com.br/coldplay/clocks/guitarpro/"
+        ));
+        assert!(ok("blob:https://www.cifraclub.com.br/0f1e"));
+        assert!(!ok("about:blank"));
+        assert!(!ok("javascript:alert(1)"));
+        assert!(!ok("file:///C:/Windows/notepad.exe"));
+    }
 
     #[test]
     fn recognizes_score_files_case_insensitively() {
