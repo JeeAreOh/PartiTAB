@@ -499,8 +499,12 @@ fn reading_save(lib: State<LibraryState>, card: ReadingCard) -> Result<(), Strin
 }
 
 /// Abre o navegador de busca de partituras no endereço dado.
+///
+/// Precisa ser `async`: no Windows, criar uma janela dentro de um comando
+/// síncrono trava o app (o comando roda na thread principal, que a criação
+/// da janela também precisa).
 #[tauri::command]
-fn open_search(app: AppHandle, url: String) -> Result<(), String> {
+async fn open_search(app: AppHandle, url: String) -> Result<(), String> {
     search::open(&app, &url)
 }
 
