@@ -96,6 +96,29 @@ export interface ErrorMap {
   keys: { key: number; notes: number; errors: number }[];
 }
 
+export interface UpdateStatus {
+  version: string;
+  configured: boolean;
+  repo: string;
+}
+
+export interface UpdateAsset {
+  id: number;
+  name: string;
+  size: number;
+}
+
+export interface UpdateInfo {
+  current: string;
+  latest: string;
+  available: boolean;
+  title: string;
+  notes: string;
+  publishedAt: string | null;
+  url: string;
+  installer: UpdateAsset | null;
+}
+
 export const api = {
   getStatus: () => invoke<Status>("get_status"),
   listMidiInputs: () => invoke<string[]>("list_midi_inputs"),
@@ -105,6 +128,12 @@ export const api = {
   playNote: (key: number, velocity: number) => invoke<void>("play_note", { key, velocity }),
   readFile: (path: string) =>
     invoke<ArrayBuffer>("read_file", { path }).then((b) => new Uint8Array(b)),
+  updates: {
+    status: () => invoke<UpdateStatus>("update_status"),
+    setToken: (token: string) => invoke<void>("update_set_token", { token }),
+    check: () => invoke<UpdateInfo>("update_check"),
+    install: (asset: UpdateAsset) => invoke<void>("update_install", { asset }),
+  },
   openSearch: (url: string) => invoke<void>("open_search", { url }),
   onSearchDownload: (
     handler: (e: import("./search/Search").DownloadResult) => void,

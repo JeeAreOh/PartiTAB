@@ -3,6 +3,7 @@ mod covers;
 mod library;
 mod midi;
 mod search;
+mod updates;
 
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -206,6 +207,84 @@ fn library_attempts(lib: State<LibraryState>, song_id: i64) -> Result<Vec<Attemp
     lib.get()?.attempts(song_id)
 }
 
+// ---------------------------------------------------------- atualizações
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateStatus {
+    version: String,
+    configured: bool,
+    repo: &'static str,
+}
+
+fn data_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    app.path().app_data_dir().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn update_status(app: AppHandle) -> Result<UpdateStatus, String> {
+    Ok(UpdateStatus {
+        version: app.package_info().version.to_string(),
+        configured: !updates::load_token(&data_dir(&app)?).is_empty(),
+        repo: updates::REPO,
+    })
+}
+
+#[tauri::command]
+fn update_set_token(app: AppHandle, token: String) -> Result<(), String> {
+    updates::save_token(&data_dir(&app)?, &token)
+}
+
+#[tauri::command]
+async fn update_check(app: AppHandle) -> Result<updates::UpdateInfo, String> {
+    let token = updates::load_token(&data_dir(&app)?);
+    let current = app.package_info().version.to_string();
+    tauri::async_runtime::spawn_blocking(move || updates::check(&token, &current))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Baixa o instalador da nova versão, abre e fecha o app (o instalador
+/// substitui os arquivos; a biblioteca e os ajustes ficam).
+#[tauri::command]
+async fn update_install(app: AppHandle, asset: updates::Asset) -> Result<(), String> {
+    let token = updates::load_token(&data_dir(&app)?);
+    let dir = app
+        .path()
+        .temp_dir()
+        .map_err(|e| e.to_string())?
+        .join("PartiTAB-atualizacao");
+    let installer =
+        tauri::async_runtime::spawn_blocking(move || updates::download(&token, &asset, &dir))
+            .await
+            .map_err(|e| e.to_string())??;
+
+    #[cfg(windows)]
+    {
+        let is_msi = installer
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("msi"));
+        let spawned = if is_msi {
+            std::process::Command::new("msiexec")
+                .arg("/i")
+                .arg(&installer)
+                .spawn()
+        } else {
+            std::process::Command::new(&installer).spawn()
+        };
+        spawned.map_err(|e| format!("Não foi possível abrir o instalador: {e}"))?;
+        app.exit(0);
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    {
+        Err(format!(
+            "A instalação automática é só para Windows. O instalador foi salvo em {}",
+            installer.display()
+        ))
+    }
+}
+
 // ----------------------------------------------------------------- capas
 
 #[tauri::command]
@@ -314,6 +393,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .manage(state)
         .setup(|app| {
             let library = app
@@ -345,6 +425,10 @@ pub fn run() {
             library_error_map,
             library_import_collection,
             library_find_covers,
+            update_status,
+            update_set_token,
+            update_check,
+            update_install,
             library_cover_from_url,
             library_cover_from_file,
             library_remove_cover,

@@ -1,6 +1,8 @@
 import { useEffect } from "react";
 import type { Status } from "./api";
 import { Icon } from "./ui/Icon";
+import { UpdatesSection } from "./updates/UpdatesSection";
+import type { Updates } from "./updates/useUpdates";
 
 interface Props {
   status: Status | null;
@@ -13,6 +15,7 @@ interface Props {
   onDisconnect: () => void;
   onChooseSoundfont: () => void;
   onClose: () => void;
+  updates: Updates;
 }
 
 const fileName = (path: string) => path.split(/[\\/]/).pop() ?? path;
@@ -130,6 +133,8 @@ export function Settings(p: Props) {
             {status?.soundfont ? "Trocar SoundFont…" : "Escolher SoundFont…"}
           </button>
         </section>
+
+        <UpdatesSection updates={p.updates} />
 
         <section className="setting">
           <div className="setting-title">

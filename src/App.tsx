@@ -14,6 +14,7 @@ import { barsToRange, rangeToBars, worstSegments, type Segment } from "./practic
 import type { BarStat } from "./practice/engine";
 import { ReadingTrainer } from "./reading/ReadingTrainer";
 import { Settings } from "./Settings";
+import { useUpdates } from "./updates/useUpdates";
 import { Search, type DownloadResult } from "./search/Search";
 import { VideoPanel } from "./video/VideoPanel";
 import { youtubeId, type BarLookup, type SyncPoint } from "./video/sync";
@@ -114,6 +115,7 @@ function App() {
   const [solo, setSolo] = useState(false);
   const score = useScore(setError);
   const library = useLibrary(setError);
+  const updates = useUpdates();
   const currentSong = library.songs.find((s) => s.id === currentId) ?? null;
   const changeSpeed = (value: number) => {
     setSpeed(value);
@@ -620,6 +622,16 @@ function App() {
           ))}
         </nav>
         <div className="topbar-right">
+          {updates.info?.available && (
+            <button
+              className="status-pill update"
+              onClick={() => setShowSettings(true)}
+              title="Abrir Ajustes → Atualizações"
+            >
+              <Icon name="download" size={15} />
+              Versão {updates.info.latest} disponível
+            </button>
+          )}
           <button
             className={keyboardReady && soundReady ? "status-pill ok" : "status-pill"}
             onClick={() => setShowSettings(true)}
@@ -1225,6 +1237,7 @@ function App() {
           onDisconnect={disconnect}
           onChooseSoundfont={chooseSoundfont}
           onClose={() => setShowSettings(false)}
+          updates={updates}
         />
       )}
     </div>

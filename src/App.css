@@ -1968,3 +1968,51 @@ table.attempts {
 .cover-option.saving {
   opacity: 0.6;
 }
+
+/* =========================================================== atualizações */
+
+.status-pill.update {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: transparent;
+  font-weight: 600;
+}
+
+.update-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+}
+
+.update-card button {
+  align-self: flex-start;
+}
+
+.update-notes {
+  max-height: 160px;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.token-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.row.wrap {
+  flex-wrap: wrap;
+}
+
+.setting .ok {
+  color: var(--ok);
+}
+
+.align-start {
+  align-self: flex-start;
+}
