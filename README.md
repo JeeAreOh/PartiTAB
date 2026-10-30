@@ -4,7 +4,7 @@ App de prática de piano para Windows: leitor de partitura (Guitar Pro, MusicXML
 
 O plano completo está em [docs/PLANO.md](docs/PLANO.md).
 
-## Estado atual: fase 4 — redutor para piano e biblioteca
+## Estado atual: fase 4 + interface nova, vídeo e busca
 
 **Fase 1 — piano virtual**
 
@@ -36,6 +36,23 @@ Três modos na barra de cima:
 - Pontos: nota no tempo vale 1, fora do tempo 0,5, perdida 0; cada nota errada desconta 0,5.
 
 O motor de prática roda na interface (TypeScript), não no Rust: o som do teclado continua indo direto do MIDI ao sintetizador, e o atraso de poucos ms até a interface afeta só a correção. Ainda não há compensação da latência da saída de áudio da reprodução; se as notas aparecerem sempre "adiantadas", é isso.
+
+**Interface**
+
+Três abas no topo: **Biblioteca**, **Partitura** e **Buscar**. Toda a configuração (porta MIDI, som, SoundFont) fica na gaveta de **Ajustes** (engrenagem ou o indicador de status no canto). Na partitura, uma barra com tocar/parar, andamento, **Faixa** (faixa e arranjo para piano) e **Vídeo**; logo abaixo, o modo (Ouvir, Esperar, Tocar junto), a mão e o placar. Tema claro e escuro conforme o Windows. Atalhos: <kbd>Espaço</kbd> toca/pausa, <kbd>M</kbd> marca compasso no vídeo, <kbd>Esc</kbd> fecha painéis.
+
+**Tocar junto com um vídeo do YouTube**
+
+Em **Vídeo**, cole o link. O vídeo passa a ser o relógio: a partitura, o cursor e a correção seguem o tempo dele (o alphaTab entra no modo de mídia externa). Para sincronizar, dê play e toque <kbd>M</kbd> no primeiro tempo do compasso 1; se a partitura se adiantar ou atrasar, toque <kbd>M</kbd> no início de qualquer compasso e o app corrige o andamento dali em diante (cada toque vai para o compasso mais próximo, contando repetições). O vídeo e as marcações ficam salvos com a música.
+
+- O áudio vem do próprio YouTube; nada é baixado.
+- Com vídeo, o arranjo fica no tom da gravação (o "Tom fácil" desliga).
+- Vídeos cujo dono proíbe a reprodução fora do YouTube não tocam no app.
+- A velocidade do YouTube só vai de 25% a 200% em passos fixos; o andamento escolhido é arredondado por ele.
+
+**Buscar partituras**
+
+A aba **Buscar** procura a música no Ultimate Guitar, Songsterr, MuseScore, IMSLP ou na web, ou abre qualquer endereço. O site abre numa janela do próprio PartiTAB e funciona como num navegador: login, assinatura e regras de cada site continuam valendo. Todo arquivo Guitar Pro ou MusicXML baixado ali entra direto na biblioteca; PDF, MIDI e arquivos do MuseScore (.mscz) são recusados com a explicação. O app não raspa nem baixa nada dos sites por conta própria.
 
 **Biblioteca de partituras**
 
@@ -70,10 +87,10 @@ npm run tauri build    # instalador em src-tauri/target/release/bundle
 ```
 
 1. Ligue o PSR-E463 pela porta **USB TO HOST** e abra o app.
-2. Escolha a porta do teclado e clique em **Conectar**.
-3. Em **⚙ Ajustes**, clique em **Escolher SoundFont…** e aponte para um `.sf2` de piano (o app lembra a escolha). Nenhum SoundFont acompanha o repositório; opções gratuitas: *Salamander Grand Piano*, *Yamaha C5 Grand*, *FluidR3_GM* (GM completo, ~140 MB).
+2. Em **Ajustes** (engrenagem), escolha a porta do teclado e clique em **Conectar**.
+3. Ainda em **Ajustes**, clique em **Escolher SoundFont…** e aponte para um `.sf2` de piano (o app lembra a escolha). Nenhum SoundFont acompanha o repositório; opções gratuitas: *Salamander Grand Piano*, *Yamaha C5 Grand*, *FluidR3_GM* (GM completo, ~140 MB).
 
-4. Clique em **Abrir partitura…** e escolha um arquivo.
+4. Na **Biblioteca**, use **Adicionar arquivos…** ou **Buscar na internet**.
 
 Se o teclado continuar soando junto com o PC, desligue o Local manualmente na função 050 do PSR-E463. Deixe o Touch Response em *Medium* para ter dinâmica.
 
@@ -86,6 +103,13 @@ src/
   reducer/
     harmony.ts       tonalidade, acordes, tríades, encaixe nas 61 teclas, dificuldade
     reduce.ts        monta a faixa de piano (níveis 1 a 3) dentro da partitura
+  Settings.tsx       gaveta de ajustes (teclado e som)
+  ui/                ícones e popover
+  search/Search.tsx  aba de busca (sites e downloads)
+  video/
+    youtube.ts       player do YouTube como mídia externa do alphaTab
+    sync.ts          marcações de compasso (pontos de sincronia)
+    VideoPanel.tsx   vídeo e botão de marcar
   library/
     Library.tsx      tela da biblioteca (filtros, lista, detalhes, histórico)
     filter.ts        filtros, contagens e ordenação
@@ -99,6 +123,7 @@ src-tauri/src/
   midi.rs            entrada MIDI, tradução das mensagens, Local Control
   audio.rs           saída cpal + RustySynth, sem locks no callback de áudio
   library.rs         biblioteca em SQLite: músicas, cópias dos arquivos, execuções
+  search.rs          janela de busca: importa os arquivos baixados nela
   lib.rs             estado do app e comandos Tauri
 docs/PLANO.md        plano do projeto
 ```

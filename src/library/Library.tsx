@@ -17,6 +17,7 @@ interface Props {
   busy: boolean;
   onOpen: (song: Song) => void;
   onImport: () => void;
+  onSearch: () => void;
   onUpdate: (id: number, patch: SongPatch) => Promise<void>;
   onRemove: (id: number) => Promise<void>;
 }
@@ -91,7 +92,16 @@ function loadFilters(): Filters {
   }
 }
 
-export function Library({ songs, currentId, busy, onOpen, onImport, onUpdate, onRemove }: Props) {
+export function Library({
+  songs,
+  currentId,
+  busy,
+  onOpen,
+  onImport,
+  onSearch,
+  onUpdate,
+  onRemove,
+}: Props) {
   const [filters, setFilters] = useState<Filters>(loadFilters);
   const [selectedId, setSelectedId] = useState<number | null>(currentId);
 
@@ -194,8 +204,11 @@ export function Library({ songs, currentId, busy, onOpen, onImport, onUpdate, on
 
       <div className="lib-main">
         <div className="lib-toolbar">
-          <button className="primary" onClick={onImport} disabled={busy}>
-            Adicionar partituras…
+          <button className="primary" onClick={onSearch}>
+            Buscar na internet
+          </button>
+          <button onClick={onImport} disabled={busy}>
+            Adicionar arquivos…
           </button>
           <span className="muted">
             {list.length} de {songs.length} partitura{songs.length === 1 ? "" : "s"}
@@ -216,9 +229,16 @@ export function Library({ songs, currentId, busy, onOpen, onImport, onUpdate, on
           <div className="lib-empty">
             <p>A biblioteca está vazia.</p>
             <p className="muted">
-              Toda partitura aberta entra aqui automaticamente. Você também pode adicionar várias de
-              uma vez.
+              Toda partitura aberta ou baixada pela busca entra aqui automaticamente.
             </p>
+            <div className="row center">
+              <button className="primary" onClick={onSearch}>
+                Buscar partituras
+              </button>
+              <button onClick={onImport} disabled={busy}>
+                Adicionar arquivos…
+              </button>
+            </div>
           </div>
         ) : list.length === 0 ? (
           <div className="lib-empty">

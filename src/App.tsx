@@ -8,6 +8,12 @@ import { parsePrefs, readMetadata, useLibrary, type SongPrefs } from "./library/
 import { LEVELS, type Level } from "./reducer/reduce";
 import { estimateDifficulty } from "./reducer/harmony";
 import { usePractice, type Mode } from "./practice/usePractice";
+import { Settings } from "./Settings";
+import { Search, type DownloadResult } from "./search/Search";
+import { VideoPanel } from "./video/VideoPanel";
+import { youtubeId, type BarLookup, type SyncPoint } from "./video/sync";
+import { Icon } from "./ui/Icon";
+import { Popover } from "./ui/Popover";
 import { accuracy, score as points, type Judgement } from "./practice/engine";
 import type { HandChoice } from "./practice/timeline";
 import "./App.css";
@@ -84,7 +90,11 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [currentId, setCurrentId] = useState<number | null>(null);
-  const [view, setView] = useState<"library" | "score">("score");
+  const [view, setView] = useState<"library" | "score" | "search">("score");
+  const [downloads, setDownloads] = useState<DownloadResult[]>([]);
+  /** Vídeo do YouTube ligado à partitura atual, e as marcações de compasso. */
+  const [video, setVideo] = useState<{ id: string; sync: SyncPoint[] } | null>(null);
+  const [videoLink, setVideoLink] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
   const [speed, setSpeed] = useState(100);
   const [solo, setSolo] = useState(false);
@@ -98,6 +108,8 @@ function App() {
     speed: speed / 100,
     setMutedHands: score.setMutedHands,
   });
+  const { state } = score;
+  const p = practice.state;
   const onNoteRef = useRef(practice.onNote);
   onNoteRef.current = practice.onNote;
 
@@ -138,12 +150,15 @@ function App() {
         prefs.level && prefs.melody != null
           ? { level: prefs.level, melody: prefs.melody, transpose: prefs.transpose ?? true }
           : null;
+      // O vídeo da música anterior sai antes de carregar a nova.
+      score.setMedia(null, [], false);
       if (!score.load(data, options, options ? undefined : prefs.track)) return;
+      setVideo(prefs.video ?? null);
       setCurrentId(song.id);
       storage.set(LAST_SONG, String(song.id));
       setView("score");
     },
-    [score.load],
+    [score.load, score.setMedia],
   );
 
   /** Abre um arquivo do disco: entra na biblioteca (sem duplicar) e abre. */
@@ -181,7 +196,6 @@ function App() {
       else if (legacy) await openFile(legacy).catch(() => undefined);
       storage.set(LAST_SCORE, null);
       if (!lastSong && !legacy) setView("library");
-      if (!current.midiPort || !current.soundfont) setShowSettings(true);
       return current;
     });
   }, [run, refreshPorts, openSong, openFile]);
@@ -199,15 +213,38 @@ function App() {
     };
   }, []);
 
-  // A reprodução da partitura usa o mesmo SoundFont do piano, para soarem iguais.
-  const soundfontPath = status?.soundfont;
+  // Avisos somem sozinhos; erros ficam até serem fechados.
   useEffect(() => {
-    if (!soundfontPath) return;
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(null), 4500);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
+
+  // Arquivos baixados no navegador de busca chegam já importados.
+  useEffect(() => {
+    const unlisten = api.onSearchDownload((result) => {
+      setDownloads((list) => [result, ...list]);
+      if (result.type === "imported") {
+        library.refresh();
+        setNotice(`"${result.song.title}" entrou na biblioteca`);
+      }
+    });
+    return () => {
+      unlisten.then((f) => f());
+    };
+  }, [library.refresh]);
+
+  // A reprodução da partitura usa o mesmo SoundFont do piano, para soarem iguais.
+  // (Recarrega quando o player do alphaTab é recriado.)
+  const soundfontPath = status?.soundfont;
+  const generation = score.state.playerGeneration;
+  useEffect(() => {
+    if (!soundfontPath || score.state.external) return;
     api
       .readFile(soundfontPath)
       .then(score.loadSoundFont)
       .catch((e) => setError(String(e)));
-  }, [soundfontPath, score.loadSoundFont]);
+  }, [soundfontPath, generation, score.state.external, score.loadSoundFont]);
 
   // Ao trocar de partitura ou de faixa, reaplica o modo "só esta faixa".
   useEffect(() => {
@@ -288,7 +325,8 @@ function App() {
     practice.stop();
     const current = score.state.arrangement;
     const mel = melody ?? current?.melody ?? score.state.roles.melody;
-    const tr = transpose ?? current?.transpose ?? true;
+    // Com vídeo, a música fica no tom da gravação.
+    const tr = !video && (transpose ?? current?.transpose ?? true);
     if (level === 0) score.arrange(null);
     else if (mel !== null) score.arrange({ level, melody: mel, transpose: tr });
     else return setError("Nenhuma faixa com melodia para montar o arranjo");
@@ -389,103 +427,166 @@ function App() {
     );
   }, [currentSong, score.state, library.setAutoDifficulty]);
 
+  // ------------------------------------------------------------------ vídeo
+
+  const saveVideo = (next: { id: string; sync: SyncPoint[] } | null, extra: SongPrefs = {}) => {
+    setVideo(next);
+    savePrefs({ ...extra, video: next });
+  };
+
+  const connectVideo = () => {
+    const id = youtubeId(videoLink);
+    if (!id) return setError("Não reconheci o link. Cole o endereço de um vídeo do YouTube.");
+    practice.stop();
+    setVideoLink("");
+    // A gravação está no tom original: desfaz a transposição do arranjo.
+    saveVideo(
+      { id, sync: video?.id === id ? video.sync : [] },
+      score.state.arrangement?.transpose ? { transpose: false } : {},
+    );
+  };
+
+  const disconnectVideo = () => {
+    practice.stop();
+    score.setMedia(null);
+    saveVideo(null);
+  };
+
+  const barsInPlayOrder = (): BarLookup[] =>
+    (score.apiRef.current?.tickCache?.masterBars ?? []) as unknown as BarLookup[];
+
+  // --------------------------------------------------------------- atalhos
+
+  const playPause = () => {
+    if (!state.ready) return;
+    if (p.mode === "listen") score.playPause();
+    else if (p.running) practice.stop();
+    else practice.start();
+  };
+  const playPauseRef = useRef(playPause);
+  playPauseRef.current = playPause;
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (e.code !== "Space" || e.repeat || /INPUT|SELECT|TEXTAREA|BUTTON/.test(target.tagName))
+        return;
+      e.preventDefault();
+      playPauseRef.current();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
+
   const changeSpeed = (value: number) => {
     setSpeed(value);
     score.setSpeed(value / 100);
   };
 
-  const audio = status?.audio;
-  const latencyMs =
-    audio?.bufferFrames != null
-      ? ((audio.bufferFrames / audio.sampleRate) * 1000).toFixed(1)
-      : null;
-  const { state } = score;
-  const p = practice.state;
   const practicing = p.mode !== "listen";
   const { arrangement } = state;
 
+  const trackName = state.tracks.find((t) => t.index === state.track)?.name;
+  const playing = p.mode === "listen" ? state.playing : p.running;
+  const keyboardReady = !!status?.midiPort;
+  const soundReady = !!status?.audio && !!status?.soundfont;
+
   return (
-    <main>
-      <header>
-        <h1>PartiTAB</h1>
-        <div className="segmented views" role="tablist">
+    <div className="app">
+      <header className="topbar">
+        <div className="brand">
+          <span className="logo" aria-hidden>
+            <Icon name="score" size={16} />
+          </span>
+          PartiTAB
+        </div>
+        <nav className="tabs" role="tablist">
+          {(
+            [
+              ["library", "library", "Biblioteca"],
+              ["score", "score", "Partitura"],
+              ["search", "search", "Buscar"],
+            ] as const
+          ).map(([v, icon, label]) => (
+            <button
+              key={v}
+              role="tab"
+              aria-selected={view === v}
+              className={view === v ? "tab on" : "tab"}
+              onClick={() => setView(v)}
+            >
+              <Icon name={icon} size={17} />
+              {label}
+              {v === "library" && library.songs.length > 0 && (
+                <span className="count">{library.songs.length}</span>
+              )}
+            </button>
+          ))}
+        </nav>
+        <div className="topbar-right">
           <button
-            role="tab"
-            aria-selected={view === "library"}
-            className={view === "library" ? "on" : ""}
-            onClick={() => setView("library")}
+            className={keyboardReady && soundReady ? "status-pill ok" : "status-pill"}
+            onClick={() => setShowSettings(true)}
+            title="Teclado e som"
           >
-            Biblioteca <span className="count">{library.songs.length}</span>
+            <span className="dot" />
+            {!keyboardReady
+              ? "Conectar teclado"
+              : !soundReady
+                ? "Escolher som do piano"
+                : status?.midiPort}
           </button>
           <button
-            role="tab"
-            aria-selected={view === "score"}
-            className={view === "score" ? "on" : ""}
-            onClick={() => setView("score")}
+            className="icon-button"
+            onClick={() => setShowSettings(true)}
+            aria-label="Ajustes"
           >
-            Partitura
+            <Icon name="settings" size={19} />
           </button>
         </div>
-        <div className="toolbar">
-          {view === "score" && (
-            <button onClick={chooseScore} disabled={busy}>
-              Abrir arquivo…
-            </button>
-          )}
-          {view === "score" && state.tracks.length > 0 && (
-            <>
-              <select
-                value={state.track ?? ""}
-                onChange={(e) => changeTrack(Number(e.target.value))}
-                title="Faixa exibida"
+      </header>
+
+      {view === "score" && state.tracks.length > 0 && (
+        <>
+          <section className="scorebar">
+            <div className="song-info">
+              <h2>{currentSong?.title ?? "Partitura"}</h2>
+              <p>{[currentSong?.artist, trackName].filter(Boolean).join(" · ")}</p>
+            </div>
+
+            <div className="transport">
+              <button
+                className="icon-button"
+                onClick={() => (p.mode === "listen" ? score.stop() : practice.stop())}
+                disabled={!state.ready}
+                aria-label="Parar"
+                title="Parar"
               >
-                {state.tracks.map((t) => (
-                  <option key={t.index} value={t.index}>
-                    {t.name}
-                    {t.isPiano && !/piano/i.test(t.name) ? " (piano)" : ""}
-                  </option>
-                ))}
-              </select>
-              <div className="segmented" role="group" aria-label="Modo">
-                {MODES.map(([m, label, hint]) => (
-                  <button
-                    key={m}
-                    className={p.mode === m ? "on" : ""}
-                    title={hint}
-                    onClick={() => practice.set("mode", m)}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-              {practicing ? (
-                <button
-                  className="primary"
-                  onClick={p.running ? practice.stop : practice.start}
-                  disabled={!state.ready || state.timeline.length === 0}
-                >
-                  {p.running ? "Parar" : "Começar"}
-                </button>
-              ) : (
-                <>
-                  <button
-                    className="primary"
-                    onClick={score.playPause}
-                    disabled={!state.ready}
-                    title={state.ready ? undefined : "Carregando o som…"}
-                  >
-                    {state.playing ? "Pausar" : "Tocar"}
-                  </button>
-                  <button onClick={score.stop} disabled={!state.ready}>
-                    Parar
-                  </button>
-                </>
-              )}
+                <Icon name="stop" size={16} />
+              </button>
+              <button
+                className="play-button"
+                onClick={playPause}
+                disabled={!state.ready || (p.mode !== "listen" && state.timeline.length === 0)}
+                aria-label={
+                  playing ? "Pausar" : p.mode === "listen" ? "Tocar" : "Começar a prática"
+                }
+                title={state.ready ? "Espaço" : "Carregando o som…"}
+              >
+                <Icon
+                  name={playing ? (p.mode === "listen" ? "pause" : "stop") : "play"}
+                  size={20}
+                />
+              </button>
               <span className="time">
-                {formatTime(state.position)} / {formatTime(state.duration)}
+                {formatTime(state.position)}
+                <span className="muted"> / {formatTime(state.duration)}</span>
               </span>
-              <label className="speed">
-                Andamento
+            </div>
+
+            <div className="tools">
+              <label className="tempo" title="Andamento (duplo clique volta a 100%)">
+                <Icon name="metronome" size={16} />
                 <input
                   type="range"
                   min={25}
@@ -494,264 +595,320 @@ function App() {
                   value={speed}
                   onChange={(e) => changeSpeed(Number(e.target.value))}
                   onDoubleClick={() => changeSpeed(100)}
+                  aria-label="Andamento"
                 />
                 <span>{speed}%</span>
               </label>
-              {p.mode !== "wait" && (
-                <label className="check">
+
+              <Popover
+                label={
+                  <>
+                    <Icon name="layers" size={17} />
+                    {arrangement ? `Nível ${arrangement.level}` : "Faixa"}
+                  </>
+                }
+                title="Faixa e arranjo para piano"
+                active={!!arrangement}
+                align="right"
+              >
+                <div className="form">
+                  <label>
+                    Faixa
+                    <select
+                      value={state.track ?? ""}
+                      onChange={(e) => changeTrack(Number(e.target.value))}
+                    >
+                      {state.tracks.map((t) => (
+                        <option key={t.index} value={t.index}>
+                          {t.name}
+                          {t.isPiano && !/piano/i.test(t.name) ? " (piano)" : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Arranjo para piano
+                    <select
+                      value={arrangement?.level ?? 0}
+                      onChange={(e) => changeArrangement(Number(e.target.value) as 0 | Level)}
+                    >
+                      <option value={0}>Original</option>
+                      {LEVELS.map(([level, label]) => (
+                        <option key={level} value={level}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {arrangement && (
+                    <>
+                      <label>
+                        Melodia vem de
+                        <select
+                          value={arrangement.melody}
+                          onChange={(e) =>
+                            changeArrangement(arrangement.level, Number(e.target.value))
+                          }
+                        >
+                          {state.sourceTracks.map((t) => (
+                            <option key={t.index} value={t.index}>
+                              {t.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label
+                        className="check"
+                        title={video ? "Com vídeo, a música fica no tom da gravação" : undefined}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={arrangement.transpose}
+                          disabled={!!video}
+                          onChange={(e) =>
+                            changeArrangement(arrangement.level, undefined, e.target.checked)
+                          }
+                        />
+                        Tom fácil
+                        <span className="muted">
+                          {keyName(arrangement.key)}
+                          {arrangement.shift !== 0 &&
+                            ` → ${keyName({ ...arrangement.key, tonic: (arrangement.key.tonic + arrangement.shift + 12) % 12 })}`}
+                        </span>
+                      </label>
+                      <div className="row">
+                        <button onClick={saveArrangement} disabled={busy || !currentSong}>
+                          Salvar na biblioteca
+                        </button>
+                        <button
+                          onClick={exportArrangement}
+                          disabled={busy}
+                          title="Arquivo .gp, abre no MuseScore"
+                        >
+                          Exportar…
+                        </button>
+                      </div>
+                    </>
+                  )}
+                  {p.mode !== "wait" && !video && (
+                    <label className="check">
+                      <input
+                        type="checkbox"
+                        checked={solo}
+                        onChange={(e) => setSolo(e.target.checked)}
+                      />
+                      Ouvir só esta faixa
+                    </label>
+                  )}
+                </div>
+              </Popover>
+
+              <Popover
+                label={
+                  <>
+                    <Icon name="video" size={17} />
+                    Vídeo
+                  </>
+                }
+                title="Tocar junto com um vídeo do YouTube"
+                active={!!video}
+                align="right"
+              >
+                {(close) => (
+                  <form
+                    className="form"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      connectVideo();
+                      close();
+                    }}
+                  >
+                    <label>
+                      Link do YouTube
+                      <input
+                        autoFocus
+                        value={videoLink}
+                        onChange={(e) => setVideoLink(e.target.value)}
+                        placeholder="https://www.youtube.com/watch?v=…"
+                      />
+                    </label>
+                    <p className="muted small">
+                      A partitura segue o vídeo. Dê play e toque <kbd>M</kbd> no primeiro tempo do
+                      compasso 1; marque outros compassos se ela sair do tempo.
+                    </p>
+                    <div className="row">
+                      <button className="primary" type="submit" disabled={!videoLink.trim()}>
+                        {video ? "Trocar vídeo" : "Usar vídeo"}
+                      </button>
+                      {video && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            disconnectVideo();
+                            close();
+                          }}
+                        >
+                          Desligar vídeo
+                        </button>
+                      )}
+                    </div>
+                  </form>
+                )}
+              </Popover>
+            </div>
+          </section>
+
+          <section className="practice-strip">
+            <div className="segmented" role="group" aria-label="Modo">
+              {MODES.map(([m, label, hint]) => (
+                <button
+                  key={m}
+                  className={p.mode === m ? "on" : ""}
+                  title={hint}
+                  onClick={() => practice.set("mode", m)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {practicing && (
+              <div className="segmented" role="group" aria-label="Mão">
+                {HANDS.map(([h, label]) => (
+                  <button
+                    key={h}
+                    className={p.hands === h ? "on" : ""}
+                    onClick={() => practice.set("hands", h)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
+            {p.mode === "play" && !video && (
+              <>
+                <label className="toggle">
                   <input
                     type="checkbox"
-                    checked={solo}
-                    onChange={(e) => setSolo(e.target.checked)}
+                    checked={p.metronome}
+                    onChange={(e) => practice.set("metronome", e.target.checked)}
                   />
-                  Só esta faixa
+                  Metrônomo
                 </label>
-              )}
-            </>
+                <label className="toggle">
+                  <input
+                    type="checkbox"
+                    checked={p.countIn}
+                    onChange={(e) => practice.set("countIn", e.target.checked)}
+                  />
+                  Contagem
+                </label>
+              </>
+            )}
+            {practicing ? (
+              <div className="stats" aria-live="polite">
+                <span className={`feedback ${p.last?.verdict ?? ""}`}>
+                  {p.finished ? "Fim da música!" : describe(p.last)}
+                </span>
+                <span className="score-points" title="Pontos de 0 a 100">
+                  {points(p.tally)}
+                </span>
+                <span title="Precisão">{accuracy(p.tally)}%</span>
+                <span className="good" title="Certas">
+                  {p.tally.hit} certas
+                </span>
+                {p.mode === "play" && (
+                  <span className="off" title="Adiantadas e atrasadas">
+                    {p.tally.early + p.tally.late} fora do tempo
+                  </span>
+                )}
+                <span className="bad" title="Erradas e perdidas">
+                  {p.tally.wrong + p.tally.miss} erros
+                </span>
+              </div>
+            ) : (
+              <p className="hint muted">
+                {p.mode === "listen" &&
+                  "Escolha Esperar ou Tocar junto para praticar com correção."}
+              </p>
+            )}
+          </section>
+        </>
+      )}
+
+      {(error || notice) && (
+        <div className="toasts">
+          {error && (
+            <div className="toast error" role="alert">
+              {error}
+              <button
+                className="icon-button"
+                onClick={() => setError(null)}
+                aria-label="Fechar aviso"
+              >
+                <Icon name="close" size={16} />
+              </button>
+            </div>
+          )}
+          {notice && (
+            <div className="toast" role="status">
+              {notice}
+              <button
+                className="icon-button"
+                onClick={() => setNotice(null)}
+                aria-label="Fechar aviso"
+              >
+                <Icon name="close" size={16} />
+              </button>
+            </div>
           )}
         </div>
-        <button
-          className={showSettings ? "settings-toggle on" : "settings-toggle"}
-          onClick={() => setShowSettings((v) => !v)}
-          title="Teclado MIDI e som"
-        >
-          ⚙ Ajustes
-        </button>
-      </header>
-
-      {view === "score" && state.tracks.length > 0 && (
-        <section className="practice-bar">
-          <label className="field">
-            Arranjo
-            <select
-              value={arrangement?.level ?? 0}
-              onChange={(e) => changeArrangement(Number(e.target.value) as 0 | Level)}
-              title="Redução para piano a partir das faixas da música"
-            >
-              <option value={0}>Original</option>
-              {LEVELS.map(([level, label]) => (
-                <option key={level} value={level}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </label>
-          {arrangement && (
-            <>
-              <label className="field">
-                Melodia
-                <select
-                  value={arrangement.melody}
-                  onChange={(e) => changeArrangement(arrangement.level, Number(e.target.value))}
-                >
-                  {state.sourceTracks.map((t) => (
-                    <option key={t.index} value={t.index}>
-                      {t.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label
-                className="check"
-                title="Transpõe para Dó, Sol ou Fá (ou Lá, Mi, Ré menor); a banda acompanha"
-              >
-                <input
-                  type="checkbox"
-                  checked={arrangement.transpose}
-                  onChange={(e) =>
-                    changeArrangement(arrangement.level, undefined, e.target.checked)
-                  }
-                />
-                Tom fácil
-              </label>
-              <span className="muted">
-                Tom {keyName(arrangement.key)}
-                {arrangement.shift !== 0 &&
-                  ` → ${keyName({ ...arrangement.key, tonic: (arrangement.key.tonic + arrangement.shift + 12) % 12 })}`}
-              </span>
-              <button
-                onClick={saveArrangement}
-                disabled={busy || !currentSong}
-                title="Guarda este arranjo como uma partitura nova"
-              >
-                Salvar na biblioteca
-              </button>
-              <button
-                onClick={exportArrangement}
-                disabled={busy}
-                title="Arquivo .gp, que abre no MuseScore e no Guitar Pro"
-              >
-                Exportar…
-              </button>
-            </>
-          )}
-        </section>
       )}
 
-      {view === "score" && practicing && state.tracks.length > 0 && (
-        <section className="practice-bar">
-          <div className="segmented" role="group" aria-label="Mão">
-            {HANDS.map(([h, label]) => (
-              <button
-                key={h}
-                className={p.hands === h ? "on" : ""}
-                onClick={() => practice.set("hands", h)}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          {p.mode === "play" && (
-            <>
-              <label className="check">
-                <input
-                  type="checkbox"
-                  checked={p.metronome}
-                  onChange={(e) => practice.set("metronome", e.target.checked)}
-                />
-                Metrônomo
-              </label>
-              <label className="check">
-                <input
-                  type="checkbox"
-                  checked={p.countIn}
-                  onChange={(e) => practice.set("countIn", e.target.checked)}
-                />
-                Contagem
-              </label>
-            </>
-          )}
-          <div className="stats" aria-live="polite">
-            <span className={`feedback ${p.last?.verdict ?? ""}`}>
-              {p.finished ? "Fim da música!" : describe(p.last)}
-            </span>
-            <span title="Pontos (0–100)">
-              <b>{points(p.tally)}</b> pts
-            </span>
-            <span title="Notas certas sobre tudo que foi tocado ou deveria ter sido">
-              {accuracy(p.tally)}% precisão
-            </span>
-            <span className="good">{p.tally.hit} certas</span>
-            {p.mode === "play" && (
-              <span className="off">
-                {p.tally.early} adiantadas · {p.tally.late} atrasadas
-              </span>
-            )}
-            <span className="bad">{p.tally.wrong} erradas</span>
-            {p.mode === "play" && <span className="bad">{p.tally.miss} perdidas</span>}
-          </div>
-        </section>
-      )}
-
-      {showSettings && (
-        <section className="panels">
-          <div className="panel">
-            <h2>Teclado MIDI</h2>
-            {status?.midiPort ? (
-              <>
-                <p className="ok">Conectado a {status.midiPort}</p>
-                {status.localControlOff ? (
-                  <p className="muted">Som interno do teclado desligado (Local Off).</p>
-                ) : (
-                  <p className="warn">
-                    Não consegui desligar o som interno. No PSR-E463, ajuste a função 050 (Local)
-                    para OFF.
-                  </p>
-                )}
-                <button onClick={disconnect} disabled={busy}>
-                  Desconectar
-                </button>
-              </>
-            ) : (
-              <>
-                <div className="row">
-                  <select
-                    value={selected}
-                    onChange={(e) => setSelected(e.target.value)}
-                    disabled={ports.length === 0}
-                  >
-                    {ports.length === 0 && <option value="">Nenhuma porta MIDI</option>}
-                    {ports.map((p) => (
-                      <option key={p}>{p}</option>
-                    ))}
-                  </select>
-                  <button
-                    onClick={() => run(async () => void (await refreshPorts()))}
-                    disabled={busy}
-                  >
-                    Atualizar
-                  </button>
-                </div>
-                <button className="primary" onClick={connect} disabled={busy || !selected}>
-                  Conectar
-                </button>
-              </>
-            )}
-          </div>
-
-          <div className="panel">
-            <h2>Som</h2>
-            {status?.audioError ? (
-              <p className="warn">Sem saída de áudio: {status.audioError}</p>
-            ) : audio ? (
-              <p className="muted">
-                {audio.device} · {audio.sampleRate} Hz ·{" "}
-                {latencyMs ? `buffer ${audio.bufferFrames} (${latencyMs} ms)` : "buffer automático"}
-              </p>
-            ) : null}
-            {status?.soundfont ? (
-              <p className="ok" title={status.soundfont}>
-                {fileName(status.soundfont)}
-              </p>
-            ) : (
-              <p className="warn">Escolha um SoundFont (.sf2) de piano para ouvir as notas.</p>
-            )}
-            <button onClick={chooseSoundfont} disabled={busy || !audio}>
-              {status?.soundfont ? "Trocar SoundFont…" : "Escolher SoundFont…"}
-            </button>
-          </div>
-        </section>
-      )}
-
-      {error && (
-        <p className="error">
-          {error}{" "}
-          <button className="link" onClick={() => setError(null)} aria-label="Fechar aviso">
-            ✕
-          </button>
-        </p>
-      )}
-      {notice && (
-        <p className="notice">
-          {notice}{" "}
-          <button className="link" onClick={() => setNotice(null)} aria-label="Fechar aviso">
-            ✕
-          </button>
-        </p>
-      )}
-
-      <div className={view === "library" ? "workspace library-open" : "workspace"}>
+      <div className={view === "score" ? "workspace" : "workspace covered"}>
         <section className="score" ref={score.scrollRef}>
           {state.tracks.length === 0 && (
             <div className="empty">
-              <p>
-                Abra um arquivo Guitar Pro (.gp3 a .gp), MusicXML ou Capella, ou escolha na
-                biblioteca.
+              <Icon name="score" size={40} />
+              <h2>Nenhuma partitura aberta</h2>
+              <p className="muted">
+                Escolha uma da biblioteca, abra um arquivo ou busque uma nova.
               </p>
               <div className="row">
-                <button className="primary" onClick={chooseScore} disabled={busy}>
+                <button className="primary" onClick={() => setView("library")}>
+                  Ir para a biblioteca
+                </button>
+                <button onClick={chooseScore} disabled={busy}>
                   Abrir arquivo…
                 </button>
-                <button onClick={() => setView("library")}>Ir para a biblioteca</button>
+                <button onClick={() => setView("search")}>Buscar partituras</button>
               </div>
             </div>
           )}
           <div ref={score.containerRef} />
         </section>
 
+        {video && (
+          <VideoPanel
+            key={video.id}
+            videoId={video.id}
+            points={video.sync}
+            bars={barsInPlayOrder}
+            currentTick={() => score.apiRef.current?.tickPosition ?? 0}
+            onReady={(handler) => score.setMedia(handler, video.sync)}
+            onTime={score.updateMediaTime}
+            onPlaying={() => undefined}
+            onPoints={(sync) => {
+              saveVideo({ id: video.id, sync });
+              score.setSyncPoints(sync);
+            }}
+            onError={setError}
+            onClose={disconnectVideo}
+          />
+        )}
+
         <section className="stage">
           <div className="indicators">
-            <span className={sustain ? "pill on" : "pill"}>Sustain</span>
+            <span className={sustain ? "pill on" : "pill"}>Pedal</span>
             <span className="legend you">Você</span>
             <span className="legend score-note">
               {p.running && p.mode === "wait" ? "Toque agora" : "Partitura"}
@@ -772,14 +929,16 @@ function App() {
             }}
           />
         </section>
+
         {view === "library" && (
-          <div className="library-layer">
+          <div className="layer">
             <Library
               songs={library.songs}
               currentId={currentId}
               busy={busy}
               onOpen={(song) => run(() => openSong(song))}
               onImport={addToLibrary}
+              onSearch={() => setView("search")}
               onUpdate={library.update}
               onRemove={async (id) => {
                 await library.remove(id);
@@ -791,8 +950,33 @@ function App() {
             />
           </div>
         )}
+
+        {view === "search" && (
+          <div className="layer">
+            <Search
+              downloads={downloads}
+              onOpenUrl={(url) => run(() => api.openSearch(url))}
+              onOpenSong={(song) => run(() => openSong(song))}
+            />
+          </div>
+        )}
       </div>
-    </main>
+
+      {showSettings && (
+        <Settings
+          status={status}
+          ports={ports}
+          selected={selected}
+          busy={busy}
+          onSelect={setSelected}
+          onRefresh={() => run(async () => void (await refreshPorts()))}
+          onConnect={connect}
+          onDisconnect={disconnect}
+          onChooseSoundfont={chooseSoundfont}
+          onClose={() => setShowSettings(false)}
+        />
+      )}
+    </div>
   );
 }
 

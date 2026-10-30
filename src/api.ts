@@ -79,6 +79,11 @@ export const api = {
   playNote: (key: number, velocity: number) => invoke<void>("play_note", { key, velocity }),
   readFile: (path: string) =>
     invoke<ArrayBuffer>("read_file", { path }).then((b) => new Uint8Array(b)),
+  openSearch: (url: string) => invoke<void>("open_search", { url }),
+  onSearchDownload: (
+    handler: (e: import("./search/Search").DownloadResult) => void,
+  ): Promise<UnlistenFn> =>
+    listen<import("./search/Search").DownloadResult>("search-download", (e) => handler(e.payload)),
   writeFile: (path: string, data: Uint8Array) =>
     invoke<void>("write_file", { path, data: Array.from(data) }),
   library: {

@@ -1,6 +1,7 @@
 mod audio;
 mod library;
 mod midi;
+mod search;
 
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -130,10 +131,10 @@ async fn write_file(path: String, data: Vec<u8>) -> Result<(), String> {
 // ------------------------------------------------------------- biblioteca
 
 /// A biblioteca abre na inicialização; se falhar, os comandos devolvem o erro.
-struct LibraryState(Result<Library, String>);
+pub(crate) struct LibraryState(Result<Library, String>);
 
 impl LibraryState {
-    fn get(&self) -> Result<&Library, String> {
+    pub(crate) fn get(&self) -> Result<&Library, String> {
         self.0
             .as_ref()
             .map_err(|e| format!("Biblioteca indisponível: {e}"))
@@ -204,6 +205,12 @@ fn library_attempts(lib: State<LibraryState>, song_id: i64) -> Result<Vec<Attemp
     lib.get()?.attempts(song_id)
 }
 
+/// Abre o navegador de busca de partituras no endereço dado.
+#[tauri::command]
+fn open_search(app: AppHandle, url: String) -> Result<(), String> {
+    search::open(&app, &url)
+}
+
 /// Notas tocadas com o mouse no teclado virtual.
 #[tauri::command]
 fn play_note(state: State<AppState>, key: u8, velocity: u8) -> Result<(), String> {
@@ -253,6 +260,7 @@ pub fn run() {
             library_delete,
             library_record_attempt,
             library_attempts,
+            open_search,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

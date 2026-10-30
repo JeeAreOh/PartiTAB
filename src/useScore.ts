@@ -15,6 +15,8 @@ import {
   type Roles,
 } from "./reducer/reduce";
 import { PITCH_NAMES, type Key } from "./reducer/harmony";
+import type { MediaHandler } from "./video/youtube";
+import type { SyncPoint } from "./video/sync";
 
 export interface TrackInfo {
   index: number;
@@ -63,6 +65,10 @@ export interface ScoreState {
   /** Notas da faixa escolhida em ordem de execução, e o mapa de andamento. */
   timeline: Step[];
   tempo: TempoMap | null;
+  /** Muda quando o player do alphaTab é recriado (o SoundFont precisa ser recarregado). */
+  playerGeneration: number;
+  /** A reprodução segue um vídeo em vez do sintetizador. */
+  external: boolean;
 }
 
 const EMPTY: ScoreState = {
@@ -78,6 +84,8 @@ const EMPTY: ScoreState = {
   sounding: new Set(),
   timeline: [],
   tempo: null,
+  playerGeneration: 0,
+  external: false,
 };
 
 export function useScore(onError: (message: string) => void) {
@@ -89,6 +97,10 @@ export function useScore(onError: (message: string) => void) {
   const bytesRef = useRef<Uint8Array | null>(null);
   /** Transposição das outras faixas para acompanhar o arranjo transposto. */
   const bandShiftRef = useRef(0);
+  const optionsRef = useRef<ReduceOptions | null>(null);
+  /** Vídeo que comanda a reprodução, e os pontos de sincronia com ele. */
+  const mediaRef = useRef<MediaHandler | null>(null);
+  const syncRef = useRef<SyncPoint[]>([]);
   const errorRef = useRef(onError);
   errorRef.current = onError;
   const [state, setState] = useState<ScoreState>(EMPTY);
@@ -194,10 +206,13 @@ export function useScore(onError: (message: string) => void) {
       index = defaultTrack(sourceTracks);
     }
     trackRef.current = index;
+    optionsRef.current = options;
     bandShiftRef.current = arrangement?.shift ?? 0;
+    if (mediaRef.current && syncRef.current.length > 0) score.applyFlatSyncPoints(syncRef.current);
     setState((s) => ({ ...s, sourceTracks, roles, arrangement, track: index }));
     api.stop();
     api.renderScore(score, index !== null ? [index] : undefined);
+    attachMedia(api, mediaRef.current);
     return { title: score.title.trim(), artist: score.artist.trim(), roles };
   }, []);
 
@@ -234,6 +249,48 @@ export function useScore(onError: (message: string) => void) {
     },
     [show],
   );
+
+  /**
+   * Liga (handler) ou desliga (null) o vídeo como relógio da reprodução.
+   * Recria o player do alphaTab e redesenha a partitura.
+   */
+  const setMedia = useCallback(
+    (handler: MediaHandler | null, sync: SyncPoint[] = [], redraw = true) => {
+      const api = apiRef.current;
+      if (!api || (handler === null && mediaRef.current === null)) return;
+      mediaRef.current = handler;
+      syncRef.current = sync;
+      // Com vídeo, a música fica no tom da gravação.
+      if (handler && optionsRef.current?.transpose) {
+        optionsRef.current = { ...optionsRef.current, transpose: false };
+      }
+      api.settings.player.playerMode = handler
+        ? alphaTab.PlayerMode.EnabledExternalMedia
+        : alphaTab.PlayerMode.EnabledSynthesizer;
+      api.updateSettings();
+      setState((s) => ({ ...s, external: !!handler, playerGeneration: s.playerGeneration + 1 }));
+      // Redesenhar logo antes de abrir outra partitura faz o alphaTab misturar as duas.
+      if (redraw && bytesRef.current) show(optionsRef.current, trackRef.current);
+    },
+    [show],
+  );
+
+  /** Troca os pontos de sincronia com o vídeo sem recarregar. */
+  const setSyncPoints = useCallback((points: SyncPoint[]) => {
+    syncRef.current = points;
+    const api = apiRef.current;
+    if (!api?.score || !mediaRef.current) return;
+    api.score.applyFlatSyncPoints(points);
+    api.updateSyncPoints();
+  }, []);
+
+  /** Tempo atual do vídeo (ms), para a partitura acompanhar. */
+  const updateMediaTime = useCallback((ms: number) => {
+    const output = apiRef.current?.player?.output as
+      | Partial<alphaTab.synth.IExternalMediaSynthOutput>
+      | undefined;
+    output?.updatePosition?.(ms);
+  }, []);
 
   /** Partitura atual (com o arranjo) em Guitar Pro 7, para salvar ou editar no MuseScore. */
   const exportGp = useCallback((): Uint8Array | null => {
@@ -290,12 +347,22 @@ export function useScore(onError: (message: string) => void) {
     load,
     arrange,
     exportGp,
+    setMedia,
+    setSyncPoints,
+    updateMediaTime,
     selectTrack,
     setSolo,
     setMutedHands,
     loadSoundFont,
     ...controls,
   };
+}
+
+function attachMedia(api: alphaTab.AlphaTabApi, handler: MediaHandler | null) {
+  const output = api.player?.output as
+    | Partial<alphaTab.synth.IExternalMediaSynthOutput>
+    | undefined;
+  if (handler && output && "updatePosition" in output) output.handler = handler;
 }
 
 function trackInfos(score: alphaTab.model.Score): TrackInfo[] {

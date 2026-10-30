@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import * as alphaTab from "@coderline/alphatab";
 import { api, type Attempt, type Song, type SongPatch } from "../api";
 import type { Level } from "../reducer/reduce";
+import type { SyncPoint } from "../video/sync";
 
 /** Preferências guardadas por música, para reabrir do jeito que estava. */
 export interface SongPrefs {
@@ -10,6 +11,8 @@ export interface SongPrefs {
   melody?: number | null;
   transpose?: boolean;
   track?: number | null;
+  /** Vídeo do YouTube sincronizado com a partitura. */
+  video?: { id: string; sync: SyncPoint[] } | null;
 }
 
 export function parsePrefs(song: Song | null): SongPrefs {
