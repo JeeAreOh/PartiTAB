@@ -205,6 +205,8 @@ fn download_handler(
     }
 }
 
+const SCORE_LINKS_SCRIPT: &str = include_str!("search_links.js");
+
 /// Janelas abertas pelos sites (links com nova aba, `window.open`).
 static POPUPS: AtomicU32 = AtomicU32::new(0);
 
@@ -232,6 +234,9 @@ pub fn open(app: &AppHandle, url: &str) -> Result<(), String> {
     WebviewWindowBuilder::new(app, WINDOW, WebviewUrl::External(url))
         .title("Buscar partituras — os arquivos baixados vão para a biblioteca")
         .inner_size(1180.0, 820.0)
+        // Clique em link de partitura abre o download aqui mesmo, antes do
+        // código do site (que abriria uma aba nova por script).
+        .initialization_script(SCORE_LINKS_SCRIPT)
         // Links com nova aba (como o "Guitar Pro" do Cifra Club, que abre uma
         // aba vazia e depois manda o arquivo para ela) ganham uma janela de
         // verdade, como num navegador. Download feito nela vai para a
