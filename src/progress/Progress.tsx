@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, type Attempt, type Song } from "../api";
 import { Cover } from "../library/Cover";
-import { formatMinutes, summarize, type DayTotal } from "./progress";
+import { formatMinutes, summarize, type DayTotal } from "./summary";
 
 const GOAL = "partitab.dailyGoal";
 const GOALS = [10, 15, 20, 30, 45, 60];

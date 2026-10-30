@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Attempt, Song } from "../api";
-import { dayKey, formatMinutes, summarize } from "./progress";
+import { dayKey, formatMinutes, summarize } from "./summary";
 
 const now = new Date(2026, 9, 30, 18, 0).getTime();
 const day = (offset: number, hour = 10) => new Date(2026, 9, 30 + offset, hour).getTime();

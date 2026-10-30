@@ -169,7 +169,7 @@ src/
     recording.ts     gravação e exportação MIDI (useRecorder.ts: gravar e ouvir)
     fingering.ts     dedilhado sugerido (programação dinâmica por mão)
     FallingNotes.tsx visão "notas caindo"
-  progress/          painel de progresso (resumo por dia, sequência, evolução)
+  progress/          painel de progresso (summary.ts: resumo por dia, sequência, evolução)
   sound/             seletor de timbre, ajustes de som e catálogo de SoundFonts
   Keyboard.tsx       teclado de 61 teclas
 src-tauri/src/
