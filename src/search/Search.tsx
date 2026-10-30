@@ -18,6 +18,67 @@ export interface Source {
  */
 export const SOURCES: Source[] = [
   {
+    id: "piano-midi-web",
+    name: "MIDI de piano na web",
+    description: "Procura a música em versão MIDI para piano em qualquer site. É a busca do Enter.",
+    formats: ["MIDI", "piano"],
+    search: "https://duckduckgo.com/?q={q}+piano+midi+download",
+    home: "https://duckduckgo.com/",
+  },
+  {
+    id: "piano-midi",
+    name: "Piano MIDI (piano-midi.de)",
+    description:
+      "Clássicos de piano tocados com as mãos em faixas separadas: a conversão para partitura sai muito boa. Gratuito para estudo.",
+    formats: ["MIDI", "piano"],
+    // O site não tem busca própria.
+    search: "https://duckduckgo.com/?q=site%3Apiano-midi.de+{q}",
+    home: "https://www.piano-midi.de/",
+  },
+  {
+    id: "mutopia",
+    name: "Mutopia Project",
+    description:
+      "Peças para piano em domínio público, editadas por voluntários, com MIDI limpo e no tempo. Peças com vários movimentos às vezes vêm em .zip.",
+    formats: ["MIDI", "piano", "domínio público"],
+    search: "https://duckduckgo.com/?q=site%3Amutopiaproject.org+piano+{q}",
+    home: "https://www.mutopiaproject.org/",
+  },
+  {
+    id: "bitmidi",
+    name: "BitMidi",
+    description:
+      "Mais de 100 mil MIDIs, muita música popular, sem cadastro. A busca já pede versões para piano; prefira as que têm \"piano\" no nome.",
+    formats: ["MIDI", "piano"],
+    search: "https://bitmidi.com/search?q={q}+piano",
+    home: "https://bitmidi.com/",
+  },
+  {
+    id: "freemidi",
+    name: "FreeMidi",
+    description: "MIDIs de pop e rock, sem cadastro. A busca já pede versões para piano; a qualidade varia.",
+    formats: ["MIDI", "piano"],
+    search: "https://duckduckgo.com/?q=site%3Afreemidi.org+{q}+piano",
+    home: "https://freemidi.org/",
+  },
+  {
+    id: "musescore",
+    name: "MuseScore",
+    description: "Partituras de piano feitas pela comunidade. Baixar MusicXML pede conta.",
+    formats: ["MusicXML"],
+    search: "https://musescore.com/sheetmusic?text={q}",
+    home: "https://musescore.com/",
+  },
+  {
+    id: "imslp",
+    name: "IMSLP",
+    description:
+      "Biblioteca de domínio público (clássicos). A maioria é PDF; procure MusicXML ou MIDI.",
+    formats: ["MusicXML", "MIDI", "domínio público"],
+    search: "https://imslp.org/index.php?title=Special:Search&search={q}",
+    home: "https://imslp.org/",
+  },
+  {
     id: "cifraclub",
     name: "Cifra Club",
     description:
@@ -42,59 +103,6 @@ export const SOURCES: Source[] = [
     formats: ["Guitar Pro"],
     search: "https://www.songsterr.com/?pattern={q}",
     home: "https://www.songsterr.com/",
-  },
-  {
-    id: "musescore",
-    name: "MuseScore",
-    description: "Partituras de piano feitas pela comunidade. Baixar MusicXML pede conta.",
-    formats: ["MusicXML"],
-    search: "https://musescore.com/sheetmusic?text={q}",
-    home: "https://musescore.com/",
-  },
-  {
-    id: "imslp",
-    name: "IMSLP",
-    description:
-      "Biblioteca de domínio público (clássicos). A maioria é PDF; procure MusicXML ou MIDI.",
-    formats: ["MusicXML", "MIDI", "domínio público"],
-    search: "https://imslp.org/index.php?title=Special:Search&search={q}",
-    home: "https://imslp.org/",
-  },
-  {
-    id: "piano-midi",
-    name: "Piano MIDI (piano-midi.de)",
-    description:
-      "Clássicos de piano tocados com as mãos em faixas separadas: a conversão para partitura sai muito boa. Gratuito para estudo.",
-    formats: ["MIDI", "piano"],
-    // O site não tem busca própria.
-    search: "https://duckduckgo.com/?q=site%3Apiano-midi.de+{q}",
-    home: "https://www.piano-midi.de/",
-  },
-  {
-    id: "bitmidi",
-    name: "BitMidi",
-    description:
-      "Mais de 100 mil MIDIs, muita música popular. Sem cadastro. Muitos têm a banda inteira, que o app divide entre as mãos.",
-    formats: ["MIDI"],
-    search: "https://bitmidi.com/search?q={q}",
-    home: "https://bitmidi.com/",
-  },
-  {
-    id: "freemidi",
-    name: "FreeMidi",
-    description: "MIDIs de pop e rock por artista, sem cadastro. Qualidade varia de arquivo para arquivo.",
-    formats: ["MIDI"],
-    search: "https://duckduckgo.com/?q=site%3Afreemidi.org+{q}",
-    home: "https://freemidi.org/",
-  },
-  {
-    id: "mutopia",
-    name: "Mutopia Project",
-    description:
-      "Partituras de domínio público editadas por voluntários, com MIDI limpo e no tempo. Peças com vários movimentos às vezes vêm em .zip.",
-    formats: ["MIDI", "domínio público"],
-    search: "https://duckduckgo.com/?q=site%3Amutopiaproject.org+{q}",
-    home: "https://www.mutopiaproject.org/",
   },
   {
     id: "web",
@@ -173,8 +181,9 @@ export function Search({
       <div className="search-hero">
         <h2>Encontrar partituras</h2>
         <p className="muted">
-          Busque uma música e escolha onde procurar. O site abre numa janela do PartiTAB; todo
-          arquivo Guitar Pro ou MusicXML que você baixar lá entra direto na biblioteca.
+          Busque uma música e escolha onde procurar; os sites de piano vêm primeiro. O site abre
+          numa janela do PartiTAB; todo arquivo MIDI, MusicXML ou Guitar Pro que você baixar lá
+          entra direto na biblioteca.
         </p>
         <form
           className="search-box"
