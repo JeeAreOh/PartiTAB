@@ -157,6 +157,10 @@ export function Settings(p: Props) {
             </dt>
             <dd>Tocar / pausar</dd>
             <dt>
+              <kbd>F1</kbd>
+            </dt>
+            <dd>Ajuda</dd>
+            <dt>
               <kbd>F11</kbd>
             </dt>
             <dd>Tela cheia</dd>

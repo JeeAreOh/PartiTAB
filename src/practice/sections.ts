@@ -19,7 +19,7 @@ export function fileSections(masterBars: MasterBarLike[]): SongSection[] {
   const starts: { name: string; from: number }[] = [];
   masterBars.forEach((bar, i) => {
     if (!bar.section) return;
-    const name = (bar.section.text || bar.section.marker).replace(/ /g, " ").trim();
+    const name = (bar.section.text || bar.section.marker).replace(/\u00a0/g, " ").trim();
     if (name) starts.push({ name, from: i });
   });
   return starts.map((s, i) => ({

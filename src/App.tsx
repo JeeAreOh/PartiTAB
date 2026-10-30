@@ -10,6 +10,7 @@ import { toScoreBytes } from "./midi/midiToMusicXml";
 import { mergeSections, sectionLabel, type SongSection } from "./practice/sections";
 import { exerciseTitle, exerciseXml, type Exercise } from "./technique/exercises";
 import { TECHNIQUE_ARTIST, Technique } from "./technique/Technique";
+import { Help } from "./help/Help";
 import { LEVELS, type Level } from "./reducer/reduce";
 import { estimateDifficulty } from "./reducer/harmony";
 import { usePractice, type Mode } from "./practice/usePractice";
@@ -137,6 +138,17 @@ function App() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
+  // F1 abre a ajuda de qualquer tela.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "F1") return;
+      e.preventDefault();
+      setShowHelp(true);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   const [currentId, setCurrentId] = useState<number | null>(null);
   const [view, setView] = useState<"library" | "score" | "reading" | "technique" | "progress" | "search">(
     "score",
@@ -869,6 +881,14 @@ function App() {
             title={screen.fullscreen ? "Sair da tela cheia (F11)" : "Tela cheia (F11)"}
           >
             <Icon name={screen.fullscreen ? "fullscreen-exit" : "fullscreen"} size={19} />
+          </button>
+          <button
+            className="icon-button"
+            onClick={() => setShowHelp(true)}
+            aria-label="Ajuda"
+            title="Ajuda (F1)"
+          >
+            <Icon name="help" size={19} />
           </button>
           <button
             className="icon-button"
@@ -1678,6 +1698,8 @@ function App() {
           </div>
         )}
       </div>
+
+      {showHelp && <Help onClose={() => setShowHelp(false)} />}
 
       {showSettings && (
         <Settings

@@ -43,7 +43,7 @@ O motor de prática roda na interface (TypeScript), não no Rust: o som do tecla
 
 **Interface**
 
-Três abas no topo: **Biblioteca**, **Partitura** e **Buscar**. Toda a configuração (porta MIDI, som, SoundFont) fica na gaveta de **Ajustes** (engrenagem ou o indicador de status no canto). Na partitura, uma barra com tocar/parar, andamento, **Faixa** (faixa e arranjo para piano) e **Vídeo**; logo abaixo, o modo (Ouvir, Esperar, Tocar junto), a mão e o placar. Tema escuro por padrão; o botão de sol/lua na barra superior troca para o claro, e **Ajustes → Tela** tem também a opção de seguir o Windows. Atalhos: <kbd>Espaço</kbd> toca/pausa, <kbd>F11</kbd> tela cheia, <kbd>M</kbd> marca compasso no vídeo, <kbd>Esc</kbd> fecha painéis.
+Três abas no topo: **Biblioteca**, **Partitura** e **Buscar**. Toda a configuração (porta MIDI, som, SoundFont) fica na gaveta de **Ajustes** (engrenagem ou o indicador de status no canto). Na partitura, uma barra com tocar/parar, andamento, **Faixa** (faixa e arranjo para piano) e **Vídeo**; logo abaixo, o modo (Ouvir, Esperar, Tocar junto), a mão e o placar. Tema escuro por padrão; o botão de sol/lua na barra superior troca para o claro, e **Ajustes → Tela** tem também a opção de seguir o Windows. **Ajuda** (botão **?** na barra superior ou <kbd>F1</kbd>): todas as funcionalidades explicadas por tópico, com índice, busca sem acento e uma seção de problemas comuns. O conteúdo fica em `src/help/topics.tsx`. Atalhos: <kbd>Espaço</kbd> toca/pausa, <kbd>F1</kbd> ajuda, <kbd>F11</kbd> tela cheia, <kbd>M</kbd> marca compasso no vídeo, <kbd>Esc</kbd> fecha painéis.
 
 **Tocar junto com um vídeo do YouTube**
 
@@ -184,6 +184,7 @@ src/
     fingering.ts     dedilhado sugerido (programação dinâmica por mão)
     FallingNotes.tsx visão "notas caindo"
   midi/              MIDI → MusicXML (faixas, mãos, tercinas, swing); musicxml.ts escreve o MusicXML
+  help/              Ajuda (topics.tsx: o texto de cada tópico)
   technique/         aba Técnica: escalas, arpejos e cadências com dedilhado
   practice/sections.ts       seções do arquivo e do aluno
   practice/keyboardOut.ts    som pelo teclado (eventos do player → MIDI)
