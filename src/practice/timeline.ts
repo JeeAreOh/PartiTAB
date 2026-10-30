@@ -19,6 +19,8 @@ export interface TimelineNote {
   hand: Hand;
   tick: number;
   endTick: number;
+  /** Índice do compasso (o mesmo em todas as repetições). */
+  bar: number;
 }
 
 export interface Step {
@@ -46,6 +48,7 @@ interface BeatLookupLike {
 export interface TickCacheLike {
   masterBars: {
     start: number;
+    masterBar: { index: number };
     tempoChanges: { tick: number; tempo: number }[];
     firstBeat: BeatLookupLike | null;
   }[];
@@ -83,6 +86,7 @@ export function buildTimeline(cache: TickCacheLike, trackIndex: number): Step[] 
             hand: handOf(staff.index, staff.track.staves.length, note.realValue),
             tick: playbackStart,
             endTick: playbackStart + beat.playbackDuration,
+            bar: bar.masterBar.index,
           });
           steps.set(playbackStart, list);
         }

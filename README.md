@@ -4,7 +4,7 @@ App de prática de piano para Windows: leitor de partitura (Guitar Pro, MusicXML
 
 O plano completo está em [docs/PLANO.md](docs/PLANO.md).
 
-## Estado atual: fase 4 + interface nova, vídeo e busca
+## Estado atual: fase 5 — prática dirigida
 
 **Fase 1 — piano virtual**
 
@@ -53,6 +53,14 @@ Em **Vídeo**, cole o link. O vídeo passa a ser o relógio: a partitura, o curs
 **Buscar partituras**
 
 A aba **Buscar** procura a música no Ultimate Guitar, Songsterr, MuseScore, IMSLP ou na web, ou abre qualquer endereço. O site abre numa janela do próprio PartiTAB e funciona como num navegador: login, assinatura e regras de cada site continuam valendo. Todo arquivo Guitar Pro ou MusicXML baixado ali entra direto na biblioteca; PDF, MIDI e arquivos do MuseScore (.mscz) são recusados com a explicação. O app não raspa nem baixa nada dos sites por conta própria.
+
+**Fase 5 — prática dirigida**
+
+- **Loop A–B com rampa de andamento.** Em **Trecho**, arraste sobre a partitura ou digite os compassos e ligue **Repetir o trecho**. No modo Tocar junto, a rampa começa em 60% e sobe 5% a cada volta limpa (sem notas erradas nem perdidas) até 100%; uma volta limpa a 100% é "trecho dominado". No modo Esperar o trecho também repete.
+- **Mapa de erros.** Cada prática grava onde você errou, por compasso e por nota. **Mapa de erros** colore os compassos (mais forte = mais erros, somando as últimas 10 execuções) e **Trecho → Onde você mais erra** lista os piores (compassos vizinhos viram um trecho só).
+- **Treinar os piores trechos.** Uma sessão curta: cada trecho em loop com a rampa, e ao dominar um o app passa para o próximo.
+- **Leitura** (aba própria). Cartões com uma nota na pauta; toque a nota no teclado. Clave de sol, de fá ou as duas; só na pauta ou com linhas suplementares; com ou sem sustenidos e bemóis; opção de esconder o teclado virtual. Repetição espaçada: notas erradas ou lentas (mais de 2,5 s) voltam mais vezes, e o histórico fica salvo entre sessões. Sessões de 20 cartões, com as notas mais difíceis ao lado.
+- **Evolução da nota** no detalhe de cada música da biblioteca (execuções completas com ponto cheio, incompletas vazado).
 
 **Biblioteca de partituras**
 
@@ -114,7 +122,10 @@ src/
     Library.tsx      tela da biblioteca (filtros, lista, detalhes, histórico)
     filter.ts        filtros, contagens e ordenação
     useLibrary.ts    ligação com o banco
+  reading/           treino de leitura (cartões, repetição espaçada, pauta em SVG)
   practice/
+    drill.ts         rampa de andamento, piores trechos, compassos ↔ pulsos
+    ErrorOverlay.tsx mapa de erros sobre a partitura
     timeline.ts      notas da faixa em ordem de execução, mãos, andamento
     engine.ts        modo espera, avaliação de tempo, pontuação
     usePractice.ts   liga o motor ao alphaTab, ao teclado e ao sintetizador
@@ -122,7 +133,8 @@ src/
 src-tauri/src/
   midi.rs            entrada MIDI, tradução das mensagens, Local Control
   audio.rs           saída cpal + RustySynth, sem locks no callback de áudio
-  library.rs         biblioteca em SQLite: músicas, cópias dos arquivos, execuções
+  library.rs         biblioteca em SQLite: músicas, cópias dos arquivos, execuções,
+                     erros por compasso/nota, cartões de leitura
   search.rs          janela de busca: importa os arquivos baixados nela
   lib.rs             estado do app e comandos Tauri
 docs/PLANO.md        plano do projeto

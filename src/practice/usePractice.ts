@@ -4,12 +4,17 @@ import { api as backend } from "../api";
 import {
   PlayAlongJudge,
   WaitSession,
+  addToStats,
   count,
+  emptyStats,
   emptyTally,
   type Judgement,
+  type Range,
+  type Stats,
   type Tally,
 } from "./engine";
-import type { HandChoice, Step, TempoMap, TimelineNote } from "./timeline";
+import { DEFAULT_RAMP, afterPass } from "./drill";
+import { type HandChoice, type Step, type TempoMap, type TimelineNote } from "./timeline";
 
 export type Mode = "listen" | "wait" | "play";
 
@@ -26,8 +31,16 @@ interface Options {
   apiRef: React.RefObject<alphaTab.AlphaTabApi | null>;
   timeline: Step[];
   tempo: TempoMap | null;
+  /** Andamento atual (1 = 100%). */
   speed: number;
   setMutedHands: (hands: HandChoice | null) => void;
+  /** Trecho A–B escolhido (null = música inteira) e se ele repete. */
+  range: Range | null;
+  loop: boolean;
+  /** Pede ao app para mudar o andamento (em %), usado pela rampa. */
+  onSpeed: (percent: number) => void;
+  /** Volta limpa no andamento final do trecho. */
+  onMastered?: () => void;
 }
 
 export interface PracticeState {
@@ -35,8 +48,17 @@ export interface PracticeState {
   hands: HandChoice;
   metronome: boolean;
   countIn: boolean;
+  /** No loop do modo Tocar junto, sobe o andamento a cada volta limpa. */
+  ramp: boolean;
   running: boolean;
   tally: Tally;
+  /** Onde se errou nesta sessão (vai para o mapa de erros). */
+  stats: Stats;
+  /** Voltas completas no trecho e erros na volta atual. */
+  passes: number;
+  passErrors: number;
+  /** Retorno da última volta ("Limpo! 70%"). */
+  passMessage: string | null;
   /** Última avaliação, para o texto de retorno. */
   last: Judgement | null;
   /** Teclas que o aluno precisa tocar agora (modo espera). */
@@ -50,8 +72,13 @@ const INITIAL: PracticeState = {
   hands: "right",
   metronome: false,
   countIn: true,
+  ramp: true,
   running: false,
   tally: emptyTally(),
+  stats: emptyStats(),
+  passes: 0,
+  passErrors: 0,
+  passMessage: null,
   last: null,
   waiting: new Set(),
   flashes: new Map(),
@@ -61,14 +88,21 @@ const INITIAL: PracticeState = {
 const flashOf = (j: Judgement): Flash =>
   j.verdict === "hit" ? "good" : j.verdict === "early" || j.verdict === "late" ? "off" : "bad";
 
-export function usePractice({ apiRef, timeline, tempo, speed, setMutedHands }: Options) {
+const isError = (j: Judgement) => j.verdict === "wrong" || j.verdict === "miss";
+
+export function usePractice(options: Options) {
+  const { apiRef, timeline, tempo, setMutedHands } = options;
   const [state, setState] = useState<PracticeState>(INITIAL);
   const stateRef = useRef(state);
   stateRef.current = state;
+  // Valores mais recentes para os callbacks do alphaTab e para recomeçar o loop.
+  const latest = useRef(options);
+  latest.current = options;
 
   const wait = useRef<WaitSession | null>(null);
   const judge = useRef<PlayAlongJudge | null>(null);
   const position = useRef({ tick: 0, at: 0 });
+  const passErrors = useRef(0);
   const sounding = useRef<TimelineNote[]>([]);
   const timer = useRef<number | undefined>(undefined);
   const flashTimers = useRef(new Map<number, number>());
@@ -101,6 +135,28 @@ export function usePractice({ apiRef, timeline, tempo, speed, setMutedHands }: O
     );
   }, []);
 
+  /** Soma avaliações no placar e no mapa de erros. */
+  const record = useCallback((judgements: Judgement[], expectedDelta = 0) => {
+    if (judgements.length === 0 && expectedDelta === 0) return;
+    const errors = judgements.filter(isError).length;
+    passErrors.current += errors;
+    setState((s) => {
+      let tally = { ...s.tally, expected: s.tally.expected + expectedDelta };
+      let stats = s.stats;
+      for (const j of judgements) {
+        tally = count(tally, j.verdict);
+        stats = addToStats(stats, j);
+      }
+      return {
+        ...s,
+        tally,
+        stats,
+        passErrors: s.passErrors + errors,
+        last: judgements[judgements.length - 1] ?? s.last,
+      };
+    });
+  }, []);
+
   const releaseAccompaniment = useCallback((untilTick = Infinity) => {
     sounding.current = sounding.current.filter((n) => {
       if (n.endTick > untilTick) return true;
@@ -116,6 +172,28 @@ export function usePractice({ apiRef, timeline, tempo, speed, setMutedHands }: O
     judge.current = null;
     setState((s) => ({ ...s, running: false, waiting: new Set() }));
   }, [releaseAccompaniment]);
+
+  /** Fim de uma volta no trecho: rampa de andamento e trecho dominado. */
+  const endPass = useCallback((usesTempo: boolean) => {
+    const clean = passErrors.current === 0;
+    passErrors.current = 0;
+    const { speed, onSpeed, onMastered } = latest.current;
+    const percent = Math.round(speed * 100);
+    let message = clean ? "Volta limpa!" : "Volta com erros: repete no mesmo andamento";
+    let mastered = clean && !usesTempo;
+    if (usesTempo && stateRef.current.ramp) {
+      const next = afterPass(percent, clean);
+      mastered = next.mastered;
+      if (next.speed !== percent) {
+        onSpeed(next.speed);
+        message = `Volta limpa! Andamento ${next.speed}%`;
+      }
+    }
+    if (mastered) message = "Trecho dominado!";
+    setState((s) => ({ ...s, passes: s.passes + 1, passErrors: 0, passMessage: message }));
+    if (mastered) onMastered?.();
+    return clean;
+  }, []);
 
   // ------------------------------------------------------------ modo espera
 
@@ -142,21 +220,40 @@ export function usePractice({ apiRef, timeline, tempo, speed, setMutedHands }: O
     // Passo sem notas do aluno: o app segue sozinho no andamento escolhido.
     if (session.required().length === 0) {
       const next = session.steps[session.index + 1];
-      const ms = next && tempo ? (tempo.ms(next.tick) - tempo.ms(step.tick)) / speed : 0;
+      const ms =
+        next && tempo ? (tempo.ms(next.tick) - tempo.ms(step.tick)) / latest.current.speed : 0;
       timer.current = window.setTimeout(() => {
+        const passes = session.passes;
         session.advance();
+        if (session.passes > passes) endPass(false);
         enterStep();
       }, ms);
     }
-  }, [apiRef, tempo, speed, finish, releaseAccompaniment]);
+  }, [apiRef, tempo, finish, releaseAccompaniment, endPass]);
 
   // ------------------------------------------------------------ tocar junto
 
   const songMs = useCallback(() => {
     if (!tempo) return 0;
     const elapsed = Math.min(performance.now() - position.current.at, MAX_EXTRAPOLATION_MS);
-    return tempo.ms(position.current.tick) + elapsed * speed;
-  }, [tempo, speed]);
+    return tempo.ms(position.current.tick) + elapsed * latest.current.speed;
+  }, [tempo]);
+
+  const newJudge = useCallback(
+    (speed: number, fromTick: number) => {
+      if (!tempo) return null;
+      const { range, loop } = latest.current;
+      return new PlayAlongJudge(
+        timeline.flatMap((s) => s.notes),
+        stateRef.current.hands,
+        (t) => tempo.ms(t),
+        speed,
+        tempo.ms(fromTick),
+        loop ? range : null,
+      );
+    },
+    [tempo, timeline],
+  );
 
   useEffect(() => {
     const api = apiRef.current;
@@ -166,17 +263,22 @@ export function usePractice({ apiRef, timeline, tempo, speed, setMutedHands }: O
       const j = judge.current;
       if (!j || !tempo) return;
       const missed = j.sweep(tempo.ms(e.currentTick));
-      if (missed.length === 0) return;
-      setState((s) => {
-        const tally = missed.reduce(
-          (t) => count({ ...t, expected: t.expected + 1 }, "miss"),
-          s.tally,
-        );
-        return { ...s, tally, last: missed[missed.length - 1] };
-      });
+      record(missed, missed.length);
     });
     const offFinished = api.playerFinished.on(() => {
-      if (!judge.current) return;
+      const j = judge.current;
+      if (!j) return;
+      const { range, loop } = latest.current;
+      // Com o trecho repetindo, o alphaTab avisa o fim de cada volta e volta ao início.
+      if (loop && range) {
+        const missed = j.sweep(Infinity);
+        record(missed, missed.length);
+        endPass(true);
+        // Se a rampa subiu o andamento, o efeito de andamento troca o juiz de novo.
+        judge.current = newJudge(latest.current.speed, range.startTick);
+        position.current = { tick: range.startTick, at: performance.now() };
+        return;
+      }
       finish();
       setState((s) => ({ ...s, finished: true }));
     });
@@ -189,37 +291,65 @@ export function usePractice({ apiRef, timeline, tempo, speed, setMutedHands }: O
       offFinished();
       offState();
     };
-  }, [apiRef, tempo, finish]);
+  }, [apiRef, tempo, finish, record, endPass, newJudge]);
+
+  // O andamento mudou durante a prática (rampa ou usuário): o juiz passa a usar o
+  // novo a partir da posição atual (as notas já avaliadas não voltam).
+  const speed = options.speed;
+  useEffect(() => {
+    const api = apiRef.current;
+    if (!judge.current || !api) return;
+    judge.current = newJudge(speed, api.tickPosition);
+  }, [speed, apiRef, newJudge]);
 
   // ------------------------------------------------------------- comandos
 
   const start = useCallback(() => {
     const api = apiRef.current;
     if (!api || !tempo || timeline.length === 0) return;
-    const { mode, hands } = stateRef.current;
+    const { mode, hands, ramp } = stateRef.current;
+    const { range, loop, onSpeed } = latest.current;
     finish();
-    setState((s) => ({ ...s, running: true, finished: false, tally: emptyTally(), last: null }));
+    passErrors.current = 0;
+    setState((s) => ({
+      ...s,
+      running: true,
+      finished: false,
+      tally: emptyTally(),
+      stats: emptyStats(),
+      passes: 0,
+      passErrors: 0,
+      passMessage: null,
+      last: null,
+    }));
 
+    const looping = loop && range !== null;
     if (mode === "wait") {
       api.pause();
-      // No fim da música, recomeça do início.
-      const startTick =
-        api.tickPosition >= timeline[timeline.length - 1].tick ? 0 : api.tickPosition;
-      wait.current = new WaitSession(timeline, hands, startTick);
+      let startTick = looping
+        ? range.startTick
+        : // No fim da música, recomeça do início.
+          api.tickPosition >= timeline[timeline.length - 1].tick
+          ? 0
+          : api.tickPosition;
+      if (range && !looping && (startTick < range.startTick || startTick >= range.endTick)) {
+        startTick = range.startTick;
+      }
+      wait.current = new WaitSession(timeline, hands, startTick, range, looping);
       enterStep();
     } else if (mode === "play") {
-      const notes = timeline.flatMap((s) => s.notes);
-      judge.current = new PlayAlongJudge(
-        notes,
-        hands,
-        (t) => tempo.ms(t),
-        speed,
-        tempo.ms(api.tickPosition),
-      );
-      position.current = { tick: api.tickPosition, at: performance.now() };
+      let speed = latest.current.speed;
+      if (looping && ramp) {
+        speed = DEFAULT_RAMP.start / 100;
+        onSpeed(DEFAULT_RAMP.start);
+      }
+      const from = looping ? range.startTick : api.tickPosition;
+      if (looping) api.tickPosition = range.startTick;
+      judge.current = newJudge(speed, from);
+      position.current = { tick: from, at: performance.now() };
       api.play();
     }
-  }, [apiRef, tempo, timeline, speed, finish, enterStep]);
+  }, [apiRef, tempo, timeline, finish, enterStep, newJudge]);
 
   const stop = useCallback(() => {
     apiRef.current?.pause();
@@ -232,30 +362,22 @@ export function usePractice({ apiRef, timeline, tempo, speed, setMutedHands }: O
       const session = wait.current;
       if (session) {
         const required = session.required().length;
+        const bar = session.step?.notes[0]?.bar;
+        const passes = session.passes;
         const result = session.press(key);
         if (result.type === "ignored") return;
         if (result.type === "wrong") {
           flash(key, "bad");
-          setState((s) => ({
-            ...s,
-            tally: count(s.tally, "wrong"),
-            last: { verdict: "wrong", key },
-          }));
+          record([{ verdict: "wrong", key, bar: result.bar, expected: result.expected }]);
           return;
         }
         flash(key, "good");
-        setState((s) => ({
-          ...s,
-          tally: count(
-            result.type === "advance"
-              ? { ...s.tally, expected: s.tally.expected + required }
-              : s.tally,
-            "hit",
-          ),
-          last: { verdict: "hit", key },
-          waiting: new Set(session.missing()),
-        }));
-        if (result.type === "advance") enterStep();
+        record([{ verdict: "hit", key, bar }], result.type === "advance" ? required : 0);
+        setState((s) => ({ ...s, waiting: new Set(session.missing()) }));
+        if (result.type === "advance") {
+          if (session.passes > passes) endPass(false);
+          enterStep();
+        }
         return;
       }
 
@@ -263,17 +385,10 @@ export function usePractice({ apiRef, timeline, tempo, speed, setMutedHands }: O
       if (j && apiRef.current?.playerState === alphaTab.synth.PlayerState.Playing) {
         const result = j.press(key, songMs());
         flash(key, flashOf(result));
-        setState((s) => ({
-          ...s,
-          tally:
-            result.verdict === "wrong"
-              ? count(s.tally, "wrong")
-              : count({ ...s.tally, expected: s.tally.expected + 1 }, result.verdict),
-          last: result,
-        }));
+        record([result], result.verdict === "wrong" ? 0 : 1);
       }
     },
-    [apiRef, flash, enterStep, songMs],
+    [apiRef, flash, record, enterStep, endPass, songMs],
   );
 
   // Trocar de partitura, faixa ou modo encerra a sessão em andamento.

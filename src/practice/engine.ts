@@ -13,7 +13,20 @@ export interface Judgement {
   key: number;
   /** Diferença em ms reais (negativo = adiantado). */
   deltaMs?: number;
+  /** Compasso a que a avaliação pertence. */
+  bar?: number;
+  /** Nota que deveria ter sido tocada (numa errada, a mais próxima). */
+  expected?: number;
 }
+
+/** Trecho da música em pulsos, [início, fim). */
+export interface Range {
+  startTick: number;
+  endTick: number;
+}
+
+const inRange = (tick: number, range?: Range | null) =>
+  !range || (tick >= range.startTick && tick < range.endTick);
 
 export interface Tally {
   hit: number;
@@ -55,26 +68,84 @@ export function accuracy(t: Tally): number {
   return total === 0 ? 0 : Math.round((100 * right) / total);
 }
 
+// ------------------------------------------------------- onde se erra
+
+export interface BarStat {
+  notes: number;
+  errors: number;
+  timing: number;
+}
+
+export interface KeyStat {
+  notes: number;
+  errors: number;
+}
+
+/** Erros acumulados por compasso e por nota (alimentam o mapa de erros). */
+export interface Stats {
+  bars: Record<number, BarStat>;
+  keys: Record<number, KeyStat>;
+}
+
+export const emptyStats = (): Stats => ({ bars: {}, keys: {} });
+
+/**
+ * Soma uma avaliação. Certa e fora do tempo contam como nota tocada (fora do
+ * tempo também em `timing`); perdida conta nota e erro; errada conta só erro,
+ * no compasso e na nota que deveria ter sido tocada.
+ */
+export function addToStats(stats: Stats, j: Judgement): Stats {
+  const isNote = j.verdict !== "wrong";
+  const isError = j.verdict === "wrong" || j.verdict === "miss";
+  const isTiming = j.verdict === "early" || j.verdict === "late";
+  const bars = { ...stats.bars };
+  const keys = { ...stats.keys };
+  if (j.bar !== undefined) {
+    const b = bars[j.bar] ?? { notes: 0, errors: 0, timing: 0 };
+    bars[j.bar] = {
+      notes: b.notes + (isNote ? 1 : 0),
+      errors: b.errors + (isError ? 1 : 0),
+      timing: b.timing + (isTiming ? 1 : 0),
+    };
+  }
+  const key = j.verdict === "wrong" ? j.expected : j.key;
+  if (key !== undefined) {
+    const k = keys[key] ?? { notes: 0, errors: 0 };
+    keys[key] = { notes: k.notes + (isNote ? 1 : 0), errors: k.errors + (isError ? 1 : 0) };
+  }
+  return { bars, keys };
+}
+
 // ---------------------------------------------------------------- modo espera
 
 export type WaitResult =
-  | { type: "wrong"; key: number }
+  | { type: "wrong"; key: number; bar?: number; expected?: number }
   | { type: "partial"; key: number }
   | { type: "advance"; key: number }
   | { type: "ignored" };
 
 export class WaitSession {
   index = 0;
+  /** Voltas completas no trecho (com `loop`). */
+  passes = 0;
+  readonly steps: Step[];
   private played = new Set<number>();
 
+  /**
+   * @param range só os passos deste trecho
+   * @param loop ao terminar o trecho, volta ao início dele
+   */
   constructor(
-    readonly steps: Step[],
+    steps: Step[],
     readonly hands: HandChoice,
     startTick = 0,
+    range: Range | null = null,
+    readonly loop = false,
   ) {
+    this.steps = steps.filter((s) => inRange(s.tick, range));
     // Começa no passo em que o cursor está (o último que já começou).
-    const after = steps.findIndex((s) => s.tick > startTick);
-    this.index = Math.max(0, (after === -1 ? steps.length : after) - 1);
+    const after = this.steps.findIndex((s) => s.tick > startTick);
+    this.index = Math.max(0, (after === -1 ? this.steps.length : after) - 1);
   }
 
   get done() {
@@ -106,7 +177,7 @@ export class WaitSession {
     if (this.done) return { type: "ignored" };
     const required = this.required().map((n) => n.key);
     if (!required.includes(key)) {
-      return { type: "wrong", key };
+      return { type: "wrong", key, bar: this.step?.notes[0]?.bar, expected: this.missing()[0] };
     }
     this.played.add(key);
     if (required.every((k) => this.played.has(k))) {
@@ -120,6 +191,10 @@ export class WaitSession {
   advance() {
     this.index++;
     this.played = new Set();
+    if (this.loop && this.done && this.steps.length > 0) {
+      this.index = 0;
+      this.passes++;
+    }
   }
 }
 
@@ -151,9 +226,10 @@ export class PlayAlongJudge {
     toMs: (tick: number) => number,
     private readonly speed: number,
     startMs = 0,
+    range: Range | null = null,
   ) {
     this.pending = notes
-      .filter((n) => plays(hands, n.hand))
+      .filter((n) => plays(hands, n.hand) && inRange(n.tick, range))
       .map((note) => ({ note, ms: toMs(note.tick), done: false }))
       .filter((p) => p.ms >= startMs - 1)
       .sort((a, b) => a.ms - b.ms);
@@ -161,6 +237,16 @@ export class PlayAlongJudge {
 
   get total() {
     return this.pending.length;
+  }
+
+  /** Nota mais próxima de `songMs` (qualquer tecla), para atribuir uma errada. */
+  private nearest(songMs: number, window: number): Pending | null {
+    let best: Pending | null = null;
+    for (const p of this.pending) {
+      if (!best || Math.abs(p.ms - songMs) < Math.abs(best.ms - songMs)) best = p;
+      if (p.ms > songMs + window) break;
+    }
+    return best;
   }
 
   /** Avalia uma nota tocada no momento `songMs` (ms de música). */
@@ -173,12 +259,21 @@ export class PlayAlongJudge {
       if (p.done || p.note.key !== key || p.ms < songMs - window) continue;
       if (!best || Math.abs(p.ms - songMs) < Math.abs(best.ms - songMs)) best = p;
     }
-    if (!best) return { verdict: "wrong", key };
+    if (!best) {
+      const near = this.nearest(songMs, window);
+      const close = near && Math.abs(near.ms - songMs) <= window;
+      return {
+        verdict: "wrong",
+        key,
+        bar: near?.note.bar,
+        expected: close ? near.note.key : undefined,
+      };
+    }
 
     best.done = true;
     const deltaMs = Math.round((songMs - best.ms) / this.speed);
     const verdict = Math.abs(deltaMs) <= ON_TIME_MS ? "hit" : deltaMs < 0 ? "early" : "late";
-    return { verdict, key, deltaMs };
+    return { verdict, key, deltaMs, bar: best.note.bar };
   }
 
   /** Marca como perdidas as notas cuja janela já passou. */
@@ -189,7 +284,7 @@ export class PlayAlongJudge {
       const p = this.pending[this.cursor++];
       if (!p.done) {
         p.done = true;
-        missed.push({ verdict: "miss", key: p.note.key });
+        missed.push({ verdict: "miss", key: p.note.key, bar: p.note.bar });
       }
     }
     return missed;

@@ -86,6 +86,27 @@ const PATHS = {
     </>
   ),
   chevron: <path d="m6 9 6 6 6-6" />,
+  repeat: (
+    <>
+      <path d="M17 2l3 3-3 3" />
+      <path d="M4 11V9a4 4 0 0 1 4-4h12" />
+      <path d="M7 22l-3-3 3-3" />
+      <path d="M20 13v2a4 4 0 0 1-4 4H4" />
+    </>
+  ),
+  heat: (
+    <>
+      <rect x="3" y="4" width="5" height="16" rx="1.5" />
+      <rect x="9.5" y="4" width="5" height="16" rx="1.5" fill="currentColor" fillOpacity="0.35" />
+      <rect x="16" y="4" width="5" height="16" rx="1.5" fill="currentColor" />
+    </>
+  ),
+  reading: (
+    <>
+      <path d="M3 7h18M3 11h18M3 15h18" />
+      <ellipse cx="14" cy="13" rx="3" ry="2.2" fill="currentColor" transform="rotate(-20 14 13)" />
+    </>
+  ),
 } as const;
 
 export type IconName = keyof typeof PATHS;

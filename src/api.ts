@@ -68,6 +68,22 @@ export interface Attempt {
   wrong: number;
   miss: number;
   completed: boolean;
+  /** Detalhe por compasso e por nota (só ao gravar). */
+  bars?: BarStat[];
+  keys?: { key: number; notes: number; errors: number }[];
+}
+
+export interface BarStat {
+  bar: number;
+  notes: number;
+  errors: number;
+  timing: number;
+}
+
+export interface ErrorMap {
+  attempts: number;
+  bars: BarStat[];
+  keys: { key: number; notes: number; errors: number }[];
 }
 
 export const api = {
@@ -98,6 +114,12 @@ export const api = {
     remove: (id: number) => invoke<void>("library_delete", { id }),
     recordAttempt: (attempt: Attempt) => invoke<Song>("library_record_attempt", { attempt }),
     attempts: (songId: number) => invoke<Attempt[]>("library_attempts", { songId }),
+    errorMap: (songId: number, last = 10) =>
+      invoke<ErrorMap>("library_error_map", { songId, last }),
+  },
+  reading: {
+    list: () => invoke<import("./reading/cards").CardState[]>("reading_cards"),
+    save: (card: import("./reading/cards").CardState) => invoke<void>("reading_save", { card }),
   },
   onKey: (handler: (e: KeyEvent) => void): Promise<UnlistenFn> =>
     listen<KeyEvent>("key", (e) => handler(e.payload)),

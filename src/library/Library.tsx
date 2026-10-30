@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, type Attempt, type Song, type SongPatch } from "../api";
+import { ScoreChart } from "./ScoreChart";
 import {
   DEFAULT_FILTERS,
   difficultyCounts,
@@ -463,6 +464,8 @@ function Details({ song, styles, busy, onOpen, onClose, onUpdate, onRemove }: De
         <dt>Melhor nota</dt>
         <dd>{song.bestScore ?? "—"}</dd>
       </dl>
+
+      {attempts && <ScoreChart attempts={attempts} />}
 
       <h3>Execuções</h3>
       {attempts === null ? (

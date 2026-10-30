@@ -11,7 +11,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 /// Cada mudança de esquema ganha uma entrada aqui; a versão fica em `user_version`.
-const MIGRATIONS: &[&str] = &["
+const MIGRATIONS: &[&str] = &[
+    "
     CREATE TABLE songs (
         id INTEGER PRIMARY KEY,
         hash TEXT NOT NULL UNIQUE,
@@ -45,7 +46,37 @@ const MIGRATIONS: &[&str] = &["
         completed INTEGER NOT NULL
     );
     CREATE INDEX attempts_song ON attempts(song_id, played_at);
-"];
+",
+    "
+    -- Onde se erra: por compasso e por nota, em cada execução.
+    CREATE TABLE attempt_bars (
+        attempt_id INTEGER NOT NULL REFERENCES attempts(id) ON DELETE CASCADE,
+        bar INTEGER NOT NULL,
+        notes INTEGER NOT NULL,
+        errors INTEGER NOT NULL,
+        timing INTEGER NOT NULL,
+        PRIMARY KEY (attempt_id, bar)
+    );
+    CREATE TABLE attempt_keys (
+        attempt_id INTEGER NOT NULL REFERENCES attempts(id) ON DELETE CASCADE,
+        key INTEGER NOT NULL,
+        notes INTEGER NOT NULL,
+        errors INTEGER NOT NULL,
+        PRIMARY KEY (attempt_id, key)
+    );
+    -- Treino de leitura: uma caixa (repetição espaçada) por nota e clave.
+    CREATE TABLE reading_cards (
+        clef TEXT NOT NULL,
+        key INTEGER NOT NULL,
+        box INTEGER NOT NULL,
+        seen INTEGER NOT NULL,
+        correct INTEGER NOT NULL,
+        total_ms INTEGER NOT NULL,
+        last_seen INTEGER,
+        PRIMARY KEY (clef, key)
+    );
+",
+];
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -112,6 +143,50 @@ pub struct Attempt {
     pub wrong: i64,
     pub miss: i64,
     pub completed: bool,
+    /// Detalhe por compasso e por nota (só na gravação; a listagem não traz).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bars: Vec<BarStat>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub keys: Vec<KeyStat>,
+}
+
+/// Notas avaliadas, erros (errada/perdida) e fora do tempo num compasso.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct BarStat {
+    pub bar: i64,
+    pub notes: i64,
+    pub errors: i64,
+    pub timing: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct KeyStat {
+    pub key: i64,
+    pub notes: i64,
+    pub errors: i64,
+}
+
+/// Soma das últimas execuções de uma música.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct ErrorMap {
+    pub attempts: i64,
+    pub bars: Vec<BarStat>,
+    pub keys: Vec<KeyStat>,
+}
+
+/// Estado de uma nota no treino de leitura.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadingCard {
+    pub clef: String,
+    pub key: i64,
+    /// Caixa da repetição espaçada: 1 (revê sempre) a 5 (já sabe).
+    #[serde(rename = "box")]
+    pub box_: i64,
+    pub seen: i64,
+    pub correct: i64,
+    pub total_ms: i64,
+    pub last_seen: Option<i64>,
 }
 
 pub struct Library {
@@ -325,8 +400,9 @@ impl Library {
     }
 
     pub fn record_attempt(&self, a: &Attempt) -> Result<Song> {
-        let conn = self.conn.lock().unwrap();
-        conn.execute(
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction().map_err(err)?;
+        tx.execute(
             "INSERT INTO attempts (song_id, played_at, mode, hands, track, level, speed, score,
                                    accuracy, hit, early, late, wrong, miss, completed)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
@@ -349,7 +425,123 @@ impl Library {
             ],
         )
         .map_err(err)?;
+        let id = tx.last_insert_rowid();
+        for b in &a.bars {
+            tx.execute(
+                "INSERT INTO attempt_bars (attempt_id, bar, notes, errors, timing)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![id, b.bar, b.notes, b.errors, b.timing],
+            )
+            .map_err(err)?;
+        }
+        for k in &a.keys {
+            tx.execute(
+                "INSERT INTO attempt_keys (attempt_id, key, notes, errors) VALUES (?1, ?2, ?3, ?4)",
+                params![id, k.key, k.notes, k.errors],
+            )
+            .map_err(err)?;
+        }
+        tx.commit().map_err(err)?;
         get(&conn, a.song_id)
+    }
+
+    /// Erros por compasso e por nota nas últimas `last` execuções.
+    pub fn error_map(&self, song_id: i64, last: i64) -> Result<ErrorMap> {
+        let conn = self.conn.lock().unwrap();
+        let recent = "SELECT id FROM attempts WHERE song_id = ?1
+                      ORDER BY played_at DESC, id DESC LIMIT ?2";
+        let attempts: i64 = conn
+            .query_row(
+                &format!("SELECT COUNT(*) FROM ({recent})"),
+                params![song_id, last],
+                |r| r.get(0),
+            )
+            .map_err(err)?;
+        let mut stmt = conn
+            .prepare(&format!(
+                "SELECT bar, SUM(notes), SUM(errors), SUM(timing) FROM attempt_bars
+                 WHERE attempt_id IN ({recent}) GROUP BY bar ORDER BY bar"
+            ))
+            .map_err(err)?;
+        let bars = stmt
+            .query_map(params![song_id, last], |r| {
+                Ok(BarStat {
+                    bar: r.get(0)?,
+                    notes: r.get(1)?,
+                    errors: r.get(2)?,
+                    timing: r.get(3)?,
+                })
+            })
+            .map_err(err)?
+            .collect::<rusqlite::Result<_>>()
+            .map_err(err)?;
+        let mut stmt = conn
+            .prepare(&format!(
+                "SELECT key, SUM(notes), SUM(errors) FROM attempt_keys
+                 WHERE attempt_id IN ({recent}) GROUP BY key ORDER BY key"
+            ))
+            .map_err(err)?;
+        let keys = stmt
+            .query_map(params![song_id, last], |r| {
+                Ok(KeyStat {
+                    key: r.get(0)?,
+                    notes: r.get(1)?,
+                    errors: r.get(2)?,
+                })
+            })
+            .map_err(err)?
+            .collect::<rusqlite::Result<_>>()
+            .map_err(err)?;
+        Ok(ErrorMap {
+            attempts,
+            bars,
+            keys,
+        })
+    }
+
+    pub fn reading_cards(&self) -> Result<Vec<ReadingCard>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare(
+                "SELECT clef, key, box, seen, correct, total_ms, last_seen FROM reading_cards
+                 ORDER BY clef, key",
+            )
+            .map_err(err)?;
+        stmt.query_map([], |r| {
+            Ok(ReadingCard {
+                clef: r.get(0)?,
+                key: r.get(1)?,
+                box_: r.get(2)?,
+                seen: r.get(3)?,
+                correct: r.get(4)?,
+                total_ms: r.get(5)?,
+                last_seen: r.get(6)?,
+            })
+        })
+        .map_err(err)?
+        .collect::<rusqlite::Result<_>>()
+        .map_err(err)
+    }
+
+    pub fn save_reading_card(&self, c: &ReadingCard) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO reading_cards (clef, key, box, seen, correct, total_ms, last_seen)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+             ON CONFLICT (clef, key) DO UPDATE SET box = ?3, seen = ?4, correct = ?5,
+                 total_ms = ?6, last_seen = ?7",
+            params![
+                c.clef,
+                c.key,
+                c.box_.clamp(1, 5),
+                c.seen,
+                c.correct,
+                c.total_ms,
+                c.last_seen
+            ],
+        )
+        .map_err(err)?;
+        Ok(())
     }
 
     /// Execuções da música, da mais recente para a mais antiga.
@@ -380,6 +572,8 @@ impl Library {
                 wrong: r.get(13)?,
                 miss: r.get(14)?,
                 completed: r.get(15)?,
+                bars: Vec::new(),
+                keys: Vec::new(),
             })
         })
         .map_err(err)?
@@ -443,6 +637,8 @@ mod tests {
             wrong: 0,
             miss: 0,
             completed,
+            bars: Vec::new(),
+            keys: Vec::new(),
         }
     }
 
@@ -522,6 +718,99 @@ mod tests {
             history.iter().map(|a| a.score).collect::<Vec<_>>(),
             [80, 95, 70]
         );
+    }
+
+    #[test]
+    fn error_map_sums_recent_attempts_per_bar_and_key() {
+        let (_dir, lib, src) = setup();
+        let id = lib.import(&src, None, None).unwrap().id;
+        let with_stats = |bars: &[(i64, i64, i64)], keys: &[(i64, i64, i64)]| {
+            let mut a = attempt(id, 50, false);
+            a.bars = bars
+                .iter()
+                .map(|&(bar, notes, errors)| BarStat {
+                    bar,
+                    notes,
+                    errors,
+                    timing: 1,
+                })
+                .collect();
+            a.keys = keys
+                .iter()
+                .map(|&(key, notes, errors)| KeyStat { key, notes, errors })
+                .collect();
+            a
+        };
+        lib.record_attempt(&with_stats(&[(0, 4, 0), (1, 4, 3)], &[(60, 8, 3)]))
+            .unwrap();
+        lib.record_attempt(&with_stats(
+            &[(1, 4, 1), (2, 2, 2)],
+            &[(60, 6, 1), (62, 2, 2)],
+        ))
+        .unwrap();
+
+        let map = lib.error_map(id, 10).unwrap();
+        assert_eq!(map.attempts, 2);
+        assert_eq!(
+            map.bars,
+            vec![
+                BarStat {
+                    bar: 0,
+                    notes: 4,
+                    errors: 0,
+                    timing: 1
+                },
+                BarStat {
+                    bar: 1,
+                    notes: 8,
+                    errors: 4,
+                    timing: 2
+                },
+                BarStat {
+                    bar: 2,
+                    notes: 2,
+                    errors: 2,
+                    timing: 1
+                },
+            ]
+        );
+        assert_eq!(
+            map.keys[0],
+            KeyStat {
+                key: 60,
+                notes: 14,
+                errors: 4
+            }
+        );
+        // Só a última execução.
+        assert_eq!(lib.error_map(id, 1).unwrap().bars.len(), 2);
+        // Apagar a música apaga o detalhe junto.
+        lib.delete(id).unwrap();
+        assert!(lib.error_map(id, 10).unwrap().bars.is_empty());
+    }
+
+    #[test]
+    fn reading_cards_are_upserted() {
+        let (_dir, lib, _src) = setup();
+        let mut card = ReadingCard {
+            clef: "treble".into(),
+            key: 64,
+            box_: 1,
+            seen: 1,
+            correct: 1,
+            total_ms: 1500,
+            last_seen: Some(10),
+        };
+        lib.save_reading_card(&card).unwrap();
+        card.box_ = 9;
+        card.seen = 2;
+        lib.save_reading_card(&card).unwrap();
+        let cards = lib.reading_cards().unwrap();
+        assert_eq!(cards.len(), 1);
+        assert_eq!((cards[0].box_, cards[0].seen), (5, 2));
+        let json = serde_json::to_value(&cards[0]).unwrap();
+        assert_eq!(json["box"], 5);
+        assert_eq!(json["totalMs"], 1500);
     }
 
     #[test]

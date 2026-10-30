@@ -10,7 +10,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, RunEvent, State};
 
 use audio::{AudioCommand, AudioEngine, AudioInfo};
-use library::{Attempt, Library, Song, SongPatch};
+use library::{Attempt, ErrorMap, Library, ReadingCard, Song, SongPatch};
 use midi::{MidiSession, SynthMessage};
 
 struct AppState {
@@ -205,6 +205,25 @@ fn library_attempts(lib: State<LibraryState>, song_id: i64) -> Result<Vec<Attemp
     lib.get()?.attempts(song_id)
 }
 
+#[tauri::command]
+fn library_error_map(
+    lib: State<LibraryState>,
+    song_id: i64,
+    last: i64,
+) -> Result<ErrorMap, String> {
+    lib.get()?.error_map(song_id, last)
+}
+
+#[tauri::command]
+fn reading_cards(lib: State<LibraryState>) -> Result<Vec<ReadingCard>, String> {
+    lib.get()?.reading_cards()
+}
+
+#[tauri::command]
+fn reading_save(lib: State<LibraryState>, card: ReadingCard) -> Result<(), String> {
+    lib.get()?.save_reading_card(&card)
+}
+
 /// Abre o navegador de busca de partituras no endereço dado.
 #[tauri::command]
 fn open_search(app: AppHandle, url: String) -> Result<(), String> {
@@ -261,6 +280,9 @@ pub fn run() {
             library_record_attempt,
             library_attempts,
             open_search,
+            library_error_map,
+            reading_cards,
+            reading_save,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

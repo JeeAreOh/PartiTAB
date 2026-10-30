@@ -8,6 +8,10 @@ import { parsePrefs, readMetadata, useLibrary, type SongPrefs } from "./library/
 import { LEVELS, type Level } from "./reducer/reduce";
 import { estimateDifficulty } from "./reducer/harmony";
 import { usePractice, type Mode } from "./practice/usePractice";
+import { ErrorOverlay } from "./practice/ErrorOverlay";
+import { barsToRange, rangeToBars, worstSegments, type Segment } from "./practice/drill";
+import type { BarStat } from "./practice/engine";
+import { ReadingTrainer } from "./reading/ReadingTrainer";
 import { Settings } from "./Settings";
 import { Search, type DownloadResult } from "./search/Search";
 import { VideoPanel } from "./video/VideoPanel";
@@ -90,7 +94,14 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [currentId, setCurrentId] = useState<number | null>(null);
-  const [view, setView] = useState<"library" | "score" | "search">("score");
+  const [view, setView] = useState<"library" | "score" | "reading" | "search">("score");
+  /** Erros por compasso nas últimas execuções da música aberta. */
+  const [errorBars, setErrorBars] = useState<Record<number, BarStat>>({});
+  const [showErrors, setShowErrors] = useState(false);
+  /** Treino dos piores trechos: um trecho por vez, até dominar. */
+  const [drill, setDrill] = useState<{ segments: Segment[]; index: number } | null>(null);
+  const [barFrom, setBarFrom] = useState("");
+  const [barTo, setBarTo] = useState("");
   const [downloads, setDownloads] = useState<DownloadResult[]>([]);
   /** Vídeo do YouTube ligado à partitura atual, e as marcações de compasso. */
   const [video, setVideo] = useState<{ id: string; sync: SyncPoint[] } | null>(null);
@@ -101,16 +112,30 @@ function App() {
   const score = useScore(setError);
   const library = useLibrary(setError);
   const currentSong = library.songs.find((s) => s.id === currentId) ?? null;
+  const changeSpeed = (value: number) => {
+    setSpeed(value);
+    score.setSpeed(value / 100);
+  };
+  const onMasteredRef = useRef<() => void>(() => undefined);
   const practice = usePractice({
     apiRef: score.apiRef,
     timeline: score.state.timeline,
     tempo: score.state.tempo,
     speed: speed / 100,
     setMutedHands: score.setMutedHands,
+    range: score.state.range,
+    loop: score.state.loop,
+    onSpeed: changeSpeed,
+    onMastered: () => onMasteredRef.current(),
   });
   const { state } = score;
   const p = practice.state;
   const onNoteRef = useRef(practice.onNote);
+  /** Enquanto o treino de leitura está aberto, as notas do teclado vão para ele. */
+  const readingHandler = useRef<((key: number) => void) | null>(null);
+  const registerReading = useCallback((h: ((key: number) => void) | null) => {
+    readingHandler.current = h;
+  }, []);
   onNoteRef.current = practice.onNote;
 
   const run = useCallback(async (action: () => Promise<Status | void>) => {
@@ -204,7 +229,8 @@ function App() {
     const unlisten = api.onKey((e) => {
       if (e.type === "noteOn") {
         setKey(e.key, e.velocity);
-        onNoteRef.current(e.key);
+        if (readingHandler.current) readingHandler.current(e.key);
+        else onNoteRef.current(e.key);
       } else if (e.type === "noteOff") setKey(e.key, null);
       else setSustain(e.down);
     });
@@ -369,6 +395,61 @@ function App() {
       }
     });
 
+  // ---------------------------------------------- mapa de erros e trechos
+
+  const loadErrors = useCallback((songId: number) => {
+    api.library
+      .errorMap(songId)
+      .then((map) => setErrorBars(Object.fromEntries(map.bars.map((b) => [b.bar, b]))))
+      .catch(() => setErrorBars({}));
+  }, []);
+
+  useEffect(() => {
+    setDrill(null);
+    if (currentId === null) setErrorBars({});
+    else loadErrors(currentId);
+  }, [currentId, loadErrors]);
+
+  const barLookups = () => score.apiRef.current?.tickCache?.masterBars ?? [];
+
+  /** Escolhe o trecho por compassos (numeração começando em 1). */
+  const selectBars = (from: number, to: number) => {
+    const range = barsToRange(barLookups(), from - 1, Math.max(from, to) - 1);
+    if (!range) return setError("Compassos fora da partitura");
+    score.setRange(range);
+    score.setLoop(true);
+  };
+
+  const rangeBars = state.range ? rangeToBars(barLookups(), state.range) : null;
+  const worst = worstSegments(errorBars);
+
+  const startDrill = () => {
+    if (worst.length === 0) return;
+    if (p.mode !== "play") practice.set("mode", "play");
+    practice.set("ramp", true);
+    setDrill({ segments: worst, index: 0 });
+    selectBars(worst[0].from + 1, worst[0].to + 1);
+    // Espera o React aplicar o trecho antes de começar.
+    window.setTimeout(() => practice.start(), 250);
+  };
+
+  // Trecho dominado: no treino dos piores trechos, passa para o próximo.
+  onMasteredRef.current = () => {
+    if (!drill) return;
+    const next = drill.index + 1;
+    practice.stop();
+    if (next >= drill.segments.length) {
+      setDrill(null);
+      setNotice("Treino concluído: todos os trechos dominados!");
+      return;
+    }
+    const seg = drill.segments[next];
+    setDrill({ ...drill, index: next });
+    setNotice(`Trecho dominado! Próximo: compassos ${seg.from + 1}–${seg.to + 1}`);
+    selectBars(seg.from + 1, seg.to + 1);
+    window.setTimeout(() => practice.start(), 900);
+  };
+
   // ------------------------------------------------- histórico e dificuldade
 
   // Ao terminar (ou parar) uma prática com notas avaliadas, grava na biblioteca.
@@ -380,22 +461,27 @@ function App() {
     const t = p0.tally;
     if (!ended || !currentSong || t.hit + t.early + t.late + t.wrong + t.miss === 0) return;
     const track = score.state.tracks.find((x) => x.index === score.state.track);
-    library.recordAttempt({
-      songId: currentSong.id,
-      mode: p0.mode,
-      hands: p0.hands,
-      track: track?.name ?? "",
-      level: score.state.arrangement ? String(score.state.arrangement.level) : "original",
-      speed,
-      score: points(t),
-      accuracy: accuracy(t),
-      hit: t.hit,
-      early: t.early,
-      late: t.late,
-      wrong: t.wrong,
-      miss: t.miss,
-      completed: p0.finished,
-    });
+    const songId = currentSong.id;
+    library
+      .recordAttempt({
+        songId: currentSong.id,
+        mode: p0.mode,
+        hands: p0.hands,
+        track: track?.name ?? "",
+        level: score.state.arrangement ? String(score.state.arrangement.level) : "original",
+        speed,
+        score: points(t),
+        accuracy: accuracy(t),
+        hit: t.hit,
+        early: t.early,
+        late: t.late,
+        wrong: t.wrong,
+        miss: t.miss,
+        completed: p0.finished,
+        bars: Object.entries(p0.stats.bars).map(([bar, b]) => ({ bar: Number(bar), ...b })),
+        keys: Object.entries(p0.stats.keys).map(([key, k]) => ({ key: Number(key), ...k })),
+      })
+      .then(() => loadErrors(songId));
     // Só reage ao fim da prática.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [p0.running]);
@@ -478,11 +564,6 @@ function App() {
     return () => document.removeEventListener("keydown", onKey);
   }, []);
 
-  const changeSpeed = (value: number) => {
-    setSpeed(value);
-    score.setSpeed(value / 100);
-  };
-
   const practicing = p.mode !== "listen";
   const { arrangement } = state;
 
@@ -505,6 +586,7 @@ function App() {
             [
               ["library", "library", "Biblioteca"],
               ["score", "score", "Partitura"],
+              ["reading", "reading", "Leitura"],
               ["search", "search", "Buscar"],
             ] as const
           ).map(([v, icon, label]) => (
@@ -784,6 +866,113 @@ function App() {
                 ))}
               </div>
             )}
+            <Popover
+              label={
+                <>
+                  <Icon name="repeat" size={17} />
+                  {rangeBars ? `Compassos ${rangeBars.from + 1}–${rangeBars.to + 1}` : "Trecho"}
+                </>
+              }
+              title="Repetir um trecho (loop A–B)"
+              active={!!state.range}
+            >
+              <div className="form">
+                <p className="muted small">
+                  Arraste sobre a partitura para escolher o trecho, ou digite os compassos.
+                </p>
+                <form
+                  className="row"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const from = Number(barFrom);
+                    if (from > 0) selectBars(from, Number(barTo) || from);
+                  }}
+                >
+                  <input
+                    className="bar-input"
+                    inputMode="numeric"
+                    placeholder="De"
+                    value={barFrom}
+                    onChange={(e) => setBarFrom(e.target.value.replace(/\D/g, ""))}
+                    aria-label="Do compasso"
+                  />
+                  <input
+                    className="bar-input"
+                    inputMode="numeric"
+                    placeholder="Até"
+                    value={barTo}
+                    onChange={(e) => setBarTo(e.target.value.replace(/\D/g, ""))}
+                    aria-label="Até o compasso"
+                  />
+                  <button type="submit" disabled={!barFrom}>
+                    Usar
+                  </button>
+                </form>
+                <label className="check">
+                  <input
+                    type="checkbox"
+                    checked={state.loop}
+                    onChange={(e) => score.setLoop(e.target.checked)}
+                    disabled={!state.range}
+                  />
+                  Repetir o trecho
+                </label>
+                <label className="check" title="No modo Tocar junto">
+                  <input
+                    type="checkbox"
+                    checked={p.ramp}
+                    onChange={(e) => practice.set("ramp", e.target.checked)}
+                  />
+                  Subir o andamento a cada volta limpa (60% → 100%)
+                </label>
+                {state.range && (
+                  <button
+                    className="link"
+                    onClick={() => {
+                      score.setRange(null);
+                      score.setLoop(false);
+                      setDrill(null);
+                    }}
+                  >
+                    Limpar trecho
+                  </button>
+                )}
+                <div className="worst">
+                  <h4>Onde você mais erra</h4>
+                  {worst.length === 0 ? (
+                    <p className="muted small">
+                      Pratique em Esperar ou Tocar junto: os compassos com mais erros aparecem aqui.
+                    </p>
+                  ) : (
+                    <>
+                      {worst.map((seg) => (
+                        <button
+                          key={seg.from}
+                          className="facet"
+                          onClick={() => selectBars(seg.from + 1, seg.to + 1)}
+                        >
+                          {seg.from === seg.to
+                            ? `Compasso ${seg.from + 1}`
+                            : `Compassos ${seg.from + 1}–${seg.to + 1}`}
+                          <span>{Math.round(seg.rate * 100)}% de erro</span>
+                        </button>
+                      ))}
+                      <button className="primary" onClick={startDrill} disabled={!state.ready}>
+                        Treinar os piores trechos
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            </Popover>
+            <button
+              className={showErrors ? "ghost active" : "ghost"}
+              onClick={() => setShowErrors((v) => !v)}
+              title="Colorir os compassos pela quantidade de erros"
+            >
+              <Icon name="heat" size={17} />
+              Mapa de erros
+            </button>
             {p.mode === "play" && !video && (
               <>
                 <label className="toggle">
@@ -809,6 +998,15 @@ function App() {
                 <span className={`feedback ${p.last?.verdict ?? ""}`}>
                   {p.finished ? "Fim da música!" : describe(p.last)}
                 </span>
+                {state.loop && state.range && p.running && (
+                  <span className="pass" title={p.passMessage ?? undefined}>
+                    {drill && `Trecho ${drill.index + 1}/${drill.segments.length} · `}
+                    Volta {p.passes + 1} · {speed}%
+                  </span>
+                )}
+                {state.loop && state.range && p.running && p.passMessage && (
+                  <span className="pass-message">{p.passMessage}</span>
+                )}
                 <span className="score-points" title="Pontos de 0 a 100">
                   {points(p.tally)}
                 </span>
@@ -884,7 +1082,16 @@ function App() {
               </div>
             </div>
           )}
-          <div ref={score.containerRef} />
+          <div className="score-surface">
+            <div ref={score.containerRef} />
+            {showErrors && (
+              <ErrorOverlay
+                api={score.apiRef.current}
+                bars={errorBars}
+                renderVersion={state.renderVersion}
+              />
+            )}
+          </div>
         </section>
 
         {video && (
@@ -948,6 +1155,12 @@ function App() {
                 }
               }}
             />
+          </div>
+        )}
+
+        {view === "reading" && (
+          <div className="layer">
+            <ReadingTrainer registerNoteHandler={registerReading} onError={setError} />
           </div>
         )}
 

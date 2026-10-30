@@ -69,6 +69,11 @@ export interface ScoreState {
   playerGeneration: number;
   /** A reprodução segue um vídeo em vez do sintetizador. */
   external: boolean;
+  /** Trecho A–B (arraste na partitura ou escolha por compassos) e se repete. */
+  range: { startTick: number; endTick: number } | null;
+  loop: boolean;
+  /** Muda a cada desenho terminado (para o mapa de erros se reposicionar). */
+  renderVersion: number;
 }
 
 const EMPTY: ScoreState = {
@@ -86,6 +91,9 @@ const EMPTY: ScoreState = {
   tempo: null,
   playerGeneration: 0,
   external: false,
+  range: null,
+  loop: false,
+  renderVersion: 0,
 };
 
 export function useScore(onError: (message: string) => void) {
@@ -101,6 +109,7 @@ export function useScore(onError: (message: string) => void) {
   /** Vídeo que comanda a reprodução, e os pontos de sincronia com ele. */
   const mediaRef = useRef<MediaHandler | null>(null);
   const syncRef = useRef<SyncPoint[]>([]);
+  const rangeRef = useRef<{ startTick: number; endTick: number } | null>(null);
   const errorRef = useRef(onError);
   errorRef.current = onError;
   const [state, setState] = useState<ScoreState>(EMPTY);
@@ -158,6 +167,15 @@ export function useScore(onError: (message: string) => void) {
         noteOnType: alphaTab.midi.MidiEventType.NoteOn,
       });
     });
+    // Trecho escolhido arrastando na partitura (ou pelo app).
+    api.playbackRangeChanged.on((e) => {
+      const r = e.playbackRange;
+      rangeRef.current = r ? { startTick: r.startTick, endTick: r.endTick } : null;
+      setState((s) => ({ ...s, range: rangeRef.current }));
+    });
+    api.postRenderFinished.on(() =>
+      setState((s) => ({ ...s, renderVersion: s.renderVersion + 1 })),
+    );
     api.playerReady.on(() => setState((s) => ({ ...s, ready: true })));
     api.playerStateChanged.on((e) => {
       const playing = e.state === alphaTab.synth.PlayerState.Playing;
@@ -212,6 +230,8 @@ export function useScore(onError: (message: string) => void) {
     setState((s) => ({ ...s, sourceTracks, roles, arrangement, track: index }));
     api.stop();
     api.renderScore(score, index !== null ? [index] : undefined);
+    // O trecho vale para a mesma música em qualquer arranjo (os compassos são os mesmos).
+    applyRange(api, rangeRef.current);
     attachMedia(api, mediaRef.current);
     return { title: score.title.trim(), artist: score.artist.trim(), roles };
   }, []);
@@ -225,6 +245,8 @@ export function useScore(onError: (message: string) => void) {
     ): ScoreInfo | null => {
       const previous = bytesRef.current;
       bytesRef.current = data;
+      rangeRef.current = null;
+      setState((s) => ({ ...s, range: null }));
       try {
         return show(options, track);
       } catch (e) {
@@ -292,6 +314,20 @@ export function useScore(onError: (message: string) => void) {
     output?.updatePosition?.(ms);
   }, []);
 
+  /** Escolhe (ou limpa) o trecho A–B. */
+  const setRange = useCallback((range: { startTick: number; endTick: number } | null) => {
+    const api = apiRef.current;
+    if (!api) return;
+    rangeRef.current = range;
+    applyRange(api, range);
+    setState((s) => ({ ...s, range }));
+  }, []);
+
+  const setLoop = useCallback((loop: boolean) => {
+    if (apiRef.current) apiRef.current.isLooping = loop;
+    setState((s) => ({ ...s, loop }));
+  }, []);
+
   /** Partitura atual (com o arranjo) em Guitar Pro 7, para salvar ou editar no MuseScore. */
   const exportGp = useCallback((): Uint8Array | null => {
     const api = apiRef.current;
@@ -348,6 +384,8 @@ export function useScore(onError: (message: string) => void) {
     arrange,
     exportGp,
     setMedia,
+    setRange,
+    setLoop,
     setSyncPoints,
     updateMediaTime,
     selectTrack,
@@ -356,6 +394,21 @@ export function useScore(onError: (message: string) => void) {
     loadSoundFont,
     ...controls,
   };
+}
+
+function applyRange(
+  api: alphaTab.AlphaTabApi,
+  range: { startTick: number; endTick: number } | null,
+) {
+  if (range) {
+    const r = new alphaTab.synth.PlaybackRange();
+    r.startTick = range.startTick;
+    r.endTick = range.endTick;
+    api.playbackRange = r;
+  } else {
+    api.playbackRange = null;
+    api.clearPlaybackRangeHighlight();
+  }
 }
 
 function attachMedia(api: alphaTab.AlphaTabApi, handler: MediaHandler | null) {

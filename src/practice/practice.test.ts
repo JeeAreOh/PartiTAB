@@ -1,5 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { PlayAlongJudge, WaitSession, accuracy, count, emptyTally, score } from "./engine";
+import {
+  PlayAlongJudge,
+  WaitSession,
+  accuracy,
+  addToStats,
+  count,
+  emptyStats,
+  emptyTally,
+  score,
+  type Judgement,
+} from "./engine";
+import { DEFAULT_RAMP, afterPass, barsToRange, rangeToBars, worstSegments } from "./drill";
 import {
   TempoMap,
   buildTimeline,
@@ -42,6 +53,7 @@ function cache(
     masterBars: [
       {
         start: 0,
+        masterBar: { index: 0 },
         tempoChanges: [{ tick: 0, tempo }],
         firstBeat: (lookups[0] as TickCacheLike["masterBars"][0]["firstBeat"]) ?? null,
       },
@@ -105,6 +117,7 @@ describe("TempoMap", () => {
     const c = cache([[0, Q, 0, [60]]], 2, 120);
     c.masterBars.push({
       start: 4 * Q,
+      masterBar: { index: 1 },
       tempoChanges: [{ tick: 4 * Q, tempo: 60 }],
       firstBeat: null,
     });
@@ -131,7 +144,7 @@ describe("WaitSession", () => {
     const s = new WaitSession(steps, "right");
     expect(s.accompaniment().map((n) => n.key)).toEqual([48]);
     expect(s.press(64)).toEqual({ type: "partial", key: 64 });
-    expect(s.press(61)).toEqual({ type: "wrong", key: 61 });
+    expect(s.press(61)).toEqual({ type: "wrong", key: 61, bar: 0, expected: 67 });
     expect(s.missing()).toEqual([67]);
     expect(s.press(67)).toEqual({ type: "advance", key: 67 });
     // Passo só da mão esquerda: nada a tocar, o app avança sozinho.
@@ -150,20 +163,20 @@ describe("WaitSession", () => {
 
 describe("PlayAlongJudge", () => {
   const notes: TimelineNote[] = [
-    { key: 60, hand: "right", tick: 0, endTick: Q },
-    { key: 62, hand: "right", tick: Q, endTick: 2 * Q },
-    { key: 48, hand: "left", tick: Q, endTick: 2 * Q },
-    { key: 64, hand: "right", tick: 2 * Q, endTick: 3 * Q },
+    { key: 60, hand: "right", tick: 0, endTick: Q, bar: 0 },
+    { key: 62, hand: "right", tick: Q, endTick: 2 * Q, bar: 0 },
+    { key: 48, hand: "left", tick: Q, endTick: 2 * Q, bar: 0 },
+    { key: 64, hand: "right", tick: 2 * Q, endTick: 3 * Q, bar: 1 },
   ];
   const toMs = (tick: number) => (tick / Q) * 500;
 
   it("classifica no tempo, adiantada, atrasada e errada", () => {
     const j = new PlayAlongJudge(notes, "right", toMs, 1);
     expect(j.total).toBe(3);
-    expect(j.press(60, 20)).toEqual({ verdict: "hit", key: 60, deltaMs: 20 });
-    expect(j.press(62, 380)).toEqual({ verdict: "early", key: 62, deltaMs: -120 });
+    expect(j.press(60, 20)).toEqual({ verdict: "hit", key: 60, deltaMs: 20, bar: 0 });
+    expect(j.press(62, 380)).toEqual({ verdict: "early", key: 62, deltaMs: -120, bar: 0 });
     expect(j.press(48, 500).verdict).toBe("wrong"); // mão não praticada
-    expect(j.press(64, 1150)).toEqual({ verdict: "late", key: 64, deltaMs: 150 });
+    expect(j.press(64, 1150)).toEqual({ verdict: "late", key: 64, deltaMs: 150, bar: 1 });
     expect(j.press(64, 1160).verdict).toBe("wrong"); // já contada
   });
 
@@ -178,7 +191,7 @@ describe("PlayAlongJudge", () => {
   it("no andamento lento, a janela e o atraso são medidos em tempo real", () => {
     const j = new PlayAlongJudge(notes, "right", toMs, 0.5);
     // 50 ms de música a 50% = 100 ms reais: atrasada.
-    expect(j.press(60, 50)).toEqual({ verdict: "late", key: 60, deltaMs: 100 });
+    expect(j.press(60, 50)).toEqual({ verdict: "late", key: 60, deltaMs: 100, bar: 0 });
   });
 
   it("começa a contar a partir da posição de início", () => {
@@ -228,5 +241,121 @@ describe("removeHandNotes", () => {
       [5, 64, 128],
       [0, 64, 144],
     ]);
+  });
+});
+
+describe("atribuição de erros", () => {
+  const notes: TimelineNote[] = [
+    { key: 60, hand: "right", tick: 0, endTick: Q, bar: 0 },
+    { key: 64, hand: "right", tick: 4 * Q, endTick: 5 * Q, bar: 1 },
+  ];
+  const toMs = (tick: number) => (tick / Q) * 500;
+
+  it("nota errada vai para o compasso e a nota esperada mais próximas", () => {
+    const j = new PlayAlongJudge(notes, "right", toMs, 1);
+    expect(j.press(65, 1990)).toEqual({ verdict: "wrong", key: 65, bar: 1, expected: 64 });
+    // Longe de qualquer nota: compasso mais próximo, sem nota esperada.
+    expect(j.press(65, 1000)).toEqual({ verdict: "wrong", key: 65, bar: 0, expected: undefined });
+  });
+
+  it("perdida leva o compasso", () => {
+    const j = new PlayAlongJudge(notes, "right", toMs, 1);
+    expect(j.sweep(5000).map((m) => m.bar)).toEqual([0, 1]);
+  });
+
+  it("soma por compasso e por nota", () => {
+    const judgements: Judgement[] = [
+      { verdict: "hit", key: 60, bar: 0 },
+      { verdict: "late", key: 62, bar: 0 },
+      { verdict: "miss", key: 64, bar: 1 },
+      { verdict: "wrong", key: 65, bar: 1, expected: 64 },
+      { verdict: "wrong", key: 70 },
+    ];
+    const stats = judgements.reduce(addToStats, emptyStats());
+    expect(stats.bars).toEqual({
+      0: { notes: 2, errors: 0, timing: 1 },
+      1: { notes: 1, errors: 2, timing: 0 },
+    });
+    expect(stats.keys).toEqual({
+      60: { notes: 1, errors: 0 },
+      62: { notes: 1, errors: 0 },
+      64: { notes: 1, errors: 2 },
+    });
+  });
+});
+
+describe("trecho e loop", () => {
+  const steps = buildTimeline(
+    cache([
+      [0, Q, 0, [60]],
+      [Q, Q, 0, [62]],
+      [2 * Q, Q, 0, [64]],
+      [3 * Q, Q, 0, [65]],
+    ]),
+    0,
+  );
+  const range = { startTick: Q, endTick: 3 * Q };
+
+  it("modo espera só usa o trecho e volta ao início dele", () => {
+    const s = new WaitSession(steps, "right", 0, range, true);
+    expect(s.steps.map((x) => x.tick)).toEqual([Q, 2 * Q]);
+    s.press(62);
+    s.press(64);
+    expect(s.passes).toBe(1);
+    expect(s.done).toBe(false);
+    expect(s.step?.tick).toBe(Q);
+  });
+
+  it("sem loop, termina no fim do trecho", () => {
+    const s = new WaitSession(steps, "right", 0, range);
+    s.press(62);
+    s.press(64);
+    expect(s.done).toBe(true);
+  });
+
+  it("tocar junto só avalia notas do trecho", () => {
+    const notes = steps.flatMap((x) => x.notes);
+    const j = new PlayAlongJudge(notes, "right", (t) => t, 1, 0, range);
+    expect(j.total).toBe(2);
+  });
+});
+
+describe("rampa de andamento", () => {
+  it("sobe 5% por volta limpa até 100% e então domina", () => {
+    expect(afterPass(60, true)).toEqual({ speed: 65, mastered: false });
+    expect(afterPass(60, false)).toEqual({ speed: 60, mastered: false });
+    expect(afterPass(98, true)).toEqual({ speed: 100, mastered: false });
+    expect(afterPass(100, true)).toEqual({ speed: 100, mastered: true });
+    expect(afterPass(100, false).mastered).toBe(false);
+    expect(DEFAULT_RAMP.start).toBe(60);
+  });
+});
+
+describe("piores trechos", () => {
+  it("junta compassos vizinhos e ordena pela taxa de erro", () => {
+    const segments = worstSegments({
+      0: { notes: 8, errors: 0, timing: 0 },
+      3: { notes: 4, errors: 2, timing: 0 },
+      4: { notes: 4, errors: 1, timing: 0 },
+      9: { notes: 4, errors: 4, timing: 0 },
+      12: { notes: 1, errors: 1, timing: 0 }, // poucas notas: fora
+      15: { notes: 10, errors: 0, timing: 2 }, // só tempo: 10%, fora
+    });
+    expect(segments).toEqual([
+      { from: 9, to: 9, rate: 1 },
+      { from: 3, to: 4, rate: 0.5 },
+    ]);
+    expect(worstSegments({}, 3)).toEqual([]);
+  });
+
+  it("converte compassos em pulsos e de volta, com repetição", () => {
+    const bars = [0, 1, 1, 2].map((index, i) => ({
+      start: i * 4 * Q,
+      end: (i + 1) * 4 * Q,
+      masterBar: { index },
+    }));
+    expect(barsToRange(bars, 1, 2)).toEqual({ startTick: 4 * Q, endTick: 16 * Q });
+    expect(barsToRange(bars, 5, 6)).toBeNull();
+    expect(rangeToBars(bars, { startTick: 4 * Q, endTick: 8 * Q })).toEqual({ from: 1, to: 1 });
   });
 });
