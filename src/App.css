@@ -36,8 +36,32 @@
   -webkit-font-smoothing: antialiased;
 }
 
+/* Tema: escuro (padrão), claro ou o do sistema (data-theme no <html>). */
+:root[data-theme="dark"] {
+  --bg: #0f0f13;
+  --surface: #18181e;
+  --surface-2: #1e1e25;
+  --hover: #24242c;
+  --text: #ececf1;
+  --muted: #9a9aa6;
+  --border: #2a2a33;
+  --accent: #7c8aff;
+  --accent-soft: #23264a;
+  --on-accent: #0f0f13;
+  --ok: #3fcf8e;
+  --warn: #f2b14c;
+  --error: #ff6b7d;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 4px 16px rgb(0 0 0 / 0.25);
+  --shadow-lg: 0 12px 40px rgb(0 0 0 / 0.5);
+  --paper: #f5f4f0;
+  --key-white: #e8e8ec;
+  --key-black: #0b0b0e;
+  --key-down: 124 138 255;
+  color-scheme: dark;
+}
+
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root[data-theme="system"] {
     --bg: #0f0f13;
     --surface: #18181e;
     --surface-2: #1e1e25;
@@ -57,6 +81,7 @@
     --key-white: #e8e8ec;
     --key-black: #0b0b0e;
     --key-down: 124 138 255;
+    color-scheme: dark;
   }
 }
 
@@ -1397,12 +1422,6 @@ table.attempts {
   --heat: 215 50 70;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --heat: 215 50 70;
-  }
-}
-
 .score-surface {
   position: relative;
 }
@@ -2479,4 +2498,27 @@ table.attempts {
   display: flex;
   flex-direction: column;
   gap: 5px;
+}
+
+.search-log {
+  font-size: 0.82rem;
+}
+
+.search-log summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+
+.search-log ol {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.log-detail {
+  word-break: break-all;
+  font-family: ui-monospace, monospace;
+  font-size: 0.78rem;
 }

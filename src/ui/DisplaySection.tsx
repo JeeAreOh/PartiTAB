@@ -1,9 +1,10 @@
 import { useEffect } from "react";
 import { Icon } from "./Icon";
 import type { Fullscreen } from "./useFullscreen";
+import { THEMES, type ThemeControl } from "./theme";
 
 /** Seção "Tela" dos ajustes: tela cheia e em qual monitor. */
-export function DisplaySection({ screen }: { screen: Fullscreen }) {
+export function DisplaySection({ screen, theme }: { screen: Fullscreen; theme: ThemeControl }) {
   const { monitors, selected, fullscreen, current, refresh } = screen;
 
   // Monitores podem ter sido ligados ou desligados desde a abertura.
@@ -16,6 +17,22 @@ export function DisplaySection({ screen }: { screen: Fullscreen }) {
       <div className="setting-title">
         <Icon name="fullscreen" />
         <h3>Tela</h3>
+      </div>
+      <div className="field">
+        <span className="muted small">Tema</span>
+        <div className="segmented" role="radiogroup" aria-label="Tema">
+          {THEMES.map(([t, label]) => (
+            <button
+              key={t}
+              role="radio"
+              aria-checked={theme.theme === t}
+              className={theme.theme === t ? "on" : ""}
+              onClick={() => theme.setTheme(t)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
       {monitors.length > 1 ? (
         <label className="field">

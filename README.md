@@ -42,7 +42,7 @@ O motor de prática roda na interface (TypeScript), não no Rust: o som do tecla
 
 **Interface**
 
-Três abas no topo: **Biblioteca**, **Partitura** e **Buscar**. Toda a configuração (porta MIDI, som, SoundFont) fica na gaveta de **Ajustes** (engrenagem ou o indicador de status no canto). Na partitura, uma barra com tocar/parar, andamento, **Faixa** (faixa e arranjo para piano) e **Vídeo**; logo abaixo, o modo (Ouvir, Esperar, Tocar junto), a mão e o placar. Tema claro e escuro conforme o Windows. Atalhos: <kbd>Espaço</kbd> toca/pausa, <kbd>F11</kbd> tela cheia, <kbd>M</kbd> marca compasso no vídeo, <kbd>Esc</kbd> fecha painéis.
+Três abas no topo: **Biblioteca**, **Partitura** e **Buscar**. Toda a configuração (porta MIDI, som, SoundFont) fica na gaveta de **Ajustes** (engrenagem ou o indicador de status no canto). Na partitura, uma barra com tocar/parar, andamento, **Faixa** (faixa e arranjo para piano) e **Vídeo**; logo abaixo, o modo (Ouvir, Esperar, Tocar junto), a mão e o placar. Tema escuro por padrão; o botão de sol/lua na barra superior troca para o claro, e **Ajustes → Tela** tem também a opção de seguir o Windows. Atalhos: <kbd>Espaço</kbd> toca/pausa, <kbd>F11</kbd> tela cheia, <kbd>M</kbd> marca compasso no vídeo, <kbd>Esc</kbd> fecha painéis.
 
 **Tocar junto com um vídeo do YouTube**
 
@@ -55,7 +55,7 @@ Em **Vídeo**, cole o link. O vídeo passa a ser o relógio: a partitura, o curs
 
 **Buscar partituras**
 
-A aba **Buscar** procura a música no Cifra Club, Ultimate Guitar, Songsterr, MuseScore, IMSLP ou na web, ou abre qualquer endereço. O site abre numa janela do próprio PartiTAB e funciona como num navegador: login, assinatura e regras de cada site continuam valendo. Todo arquivo Guitar Pro ou MusicXML baixado ali entra direto na biblioteca; PDF, MIDI e arquivos do MuseScore (.mscz) são recusados com a explicação. O app não raspa nem baixa nada dos sites por conta própria.
+A aba **Buscar** procura a música no Cifra Club, Ultimate Guitar, Songsterr, MuseScore, IMSLP ou na web, ou abre qualquer endereço. O site abre numa janela do próprio PartiTAB e funciona como num navegador: login, assinatura e regras de cada site continuam valendo. Todo arquivo Guitar Pro ou MusicXML baixado ali entra direto na biblioteca; PDF, MIDI e arquivos do MuseScore (.mscz) são recusados com a explicação. O app não raspa nem baixa nada dos sites por conta própria. Abas novas que o site abre (como o botão Guitar Pro do Cifra Club) viram janelas do app, e o nome do arquivo é lido também do link (`...?arq=musica.gp3`); um link direto de arquivo `.gp`/`.mxl` colado no campo de endereço é baixado direto para a biblioteca. **Registro da janela de busca**, no fim da aba, mostra cada janela nova e download, para entender quando algo não chega.
 
 **Fase 5 — prática dirigida**
 

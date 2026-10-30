@@ -498,6 +498,14 @@ fn reading_save(lib: State<LibraryState>, card: ReadingCard) -> Result<(), Strin
     lib.get()?.save_reading_card(&card)
 }
 
+/// Baixa um link direto de partitura (colado na aba Buscar) para a biblioteca.
+#[tauri::command]
+async fn search_import_url(app: AppHandle, url: String) -> Result<Song, String> {
+    tauri::async_runtime::spawn_blocking(move || search::import_url(&app, &url))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 /// Abre o navegador de busca de partituras no endereço dado.
 ///
 /// Precisa ser `async`: no Windows, criar uma janela dentro de um comando
@@ -583,6 +591,7 @@ pub fn run() {
             backup_export,
             backup_import,
             open_search,
+            search_import_url,
             library_error_map,
             library_import_collection,
             library_find_covers,

@@ -22,9 +22,10 @@ import { fingerNotes } from "./practice/fingering";
 import { Settings } from "./Settings";
 import { useUpdates } from "./updates/useUpdates";
 import { useFullscreen } from "./ui/useFullscreen";
+import { useTheme } from "./ui/theme";
 import { useSound } from "./sound/useSound";
 import { TonePicker } from "./sound/TonePicker";
-import { Search, type DownloadResult } from "./search/Search";
+import { Search, type DownloadResult, type SearchLogEntry } from "./search/Search";
 import { VideoPanel } from "./video/VideoPanel";
 import { youtubeId, type BarLookup, type SyncPoint } from "./video/sync";
 import { Icon } from "./ui/Icon";
@@ -145,6 +146,7 @@ function App() {
   const [barFrom, setBarFrom] = useState("");
   const [barTo, setBarTo] = useState("");
   const [downloads, setDownloads] = useState<DownloadResult[]>([]);
+  const [searchLog, setSearchLog] = useState<SearchLogEntry[]>([]);
   /** Vídeo do YouTube ligado à partitura atual, e as marcações de compasso. */
   const [video, setVideo] = useState<{ id: string; sync: SyncPoint[] } | null>(null);
   const [videoLink, setVideoLink] = useState("");
@@ -155,6 +157,7 @@ function App() {
   const library = useLibrary(setError);
   const updates = useUpdates();
   const screen = useFullscreen(setError);
+  const theme = useTheme();
   const sound = useSound({ status, setStatus, onError: setError });
   const currentSong = library.songs.find((s) => s.id === currentId) ?? null;
   const changeSpeed = (value: number) => {
@@ -343,6 +346,16 @@ function App() {
     const timer = window.setTimeout(() => setNotice(null), 4500);
     return () => window.clearTimeout(timer);
   }, [notice]);
+
+  // Registro da janela de busca (diagnóstico de downloads).
+  useEffect(() => {
+    const unlisten = api.onSearchLog((e) =>
+      setSearchLog((list) => [{ ...e, at: Date.now() }, ...list].slice(0, 40)),
+    );
+    return () => {
+      unlisten.then((f) => f());
+    };
+  }, []);
 
   // Arquivos baixados no navegador de busca chegam já importados.
   useEffect(() => {
@@ -778,6 +791,14 @@ function App() {
               : !soundReady
                 ? "Escolher som do piano"
                 : status?.midiPort}
+          </button>
+          <button
+            className="icon-button"
+            onClick={theme.toggle}
+            aria-label={theme.effective === "dark" ? "Usar tema claro" : "Usar tema escuro"}
+            title={theme.effective === "dark" ? "Tema claro" : "Tema escuro"}
+          >
+            <Icon name={theme.effective === "dark" ? "sun" : "moon"} size={19} />
           </button>
           <button
             className="icon-button"
@@ -1499,7 +1520,16 @@ function App() {
           <div className="layer">
             <Search
               downloads={downloads}
+              log={searchLog}
               onOpenUrl={(url) => run(() => api.openSearch(url))}
+              onImportUrl={(url) =>
+                run(async () => {
+                  const song = await api.searchImportUrl(url);
+                  setDownloads((list) => [{ type: "imported", song }, ...list]);
+                  library.refresh();
+                  setNotice(`"${song.title}" entrou na biblioteca`);
+                })
+              }
               busy={busy}
               onAddCollection={(name) =>
                 run(async () => {
@@ -1539,6 +1569,7 @@ function App() {
           onError={setError}
           onNotice={setNotice}
           screen={screen}
+          theme={theme}
           onClose={() => setShowSettings(false)}
           updates={updates}
         />

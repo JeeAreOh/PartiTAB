@@ -88,7 +88,19 @@ export const COLLECTIONS = [
   },
 ];
 
+export interface SearchLogEntry {
+  kind: string;
+  detail: string;
+  at: number;
+}
+
+/** O endereço parece um arquivo de partitura (e não uma página)? */
+export const looksLikeScoreLink = (text: string) =>
+  /\.(gp|gp3|gp4|gp5|gpx|musicxml|mxl|xml|cap)(\?|#|&|$)/i.test(text.trim());
+
 interface Props {
+  log: SearchLogEntry[];
+  onImportUrl: (url: string) => void;
   onAddCollection: (id: string) => void;
   busy: boolean;
   downloads: DownloadResult[];
@@ -96,13 +108,27 @@ interface Props {
   onOpenSong: (song: Song) => void;
 }
 
-export function Search({ downloads, onOpenUrl, onOpenSong, onAddCollection, busy }: Props) {
+export function Search({
+  downloads,
+  log,
+  onOpenUrl,
+  onImportUrl,
+  onOpenSong,
+  onAddCollection,
+  busy,
+}: Props) {
   const [query, setQuery] = useState("");
   const [address, setAddress] = useState("");
 
-  const openAddress = () => {
+  const fullAddress = () => {
     const text = address.trim();
-    if (text) onOpenUrl(/^https?:\/\//.test(text) ? text : `https://${text}`);
+    return /^https?:\/\//.test(text) ? text : `https://${text}`;
+  };
+  // Link direto de arquivo: baixa para a biblioteca; página: abre na janela de busca.
+  const openAddress = () => {
+    if (!address.trim()) return;
+    if (looksLikeScoreLink(address)) onImportUrl(fullAddress());
+    else onOpenUrl(fullAddress());
   };
 
   return (
@@ -175,11 +201,11 @@ export function Search({ downloads, onOpenUrl, onOpenSong, onAddCollection, busy
         <input
           value={address}
           onChange={(e) => setAddress(e.target.value)}
-          placeholder="Ou cole o endereço de outro site"
-          aria-label="Endereço de outro site"
+          placeholder="Ou cole o endereço de outro site, ou o link direto de um arquivo .gp"
+          aria-label="Endereço de outro site ou link de arquivo"
         />
-        <button type="submit" disabled={!address.trim()}>
-          Abrir
+        <button type="submit" disabled={!address.trim() || busy}>
+          {looksLikeScoreLink(address) ? "Baixar para a biblioteca" : "Abrir"}
         </button>
       </form>
 
@@ -218,6 +244,24 @@ export function Search({ downloads, onOpenUrl, onOpenSong, onAddCollection, busy
           </ul>
         )}
       </div>
+
+      {log.length > 0 && (
+        <details className="search-log">
+          <summary>Registro da janela de busca ({log.length})</summary>
+          <p className="muted small">
+            O que os sites pediram (janelas novas, downloads). Se um download não chegar à
+            biblioteca, isto mostra até onde ele foi.
+          </p>
+          <ol>
+            {log.map((e, i) => (
+              <li key={i}>
+                <span className="muted small">{new Date(e.at).toLocaleTimeString("pt-BR")}</span>{" "}
+                <b>{e.kind}</b> <span className="log-detail">{e.detail}</span>
+              </li>
+            ))}
+          </ol>
+        </details>
+      )}
     </section>
   );
 }

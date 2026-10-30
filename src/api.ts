@@ -196,6 +196,11 @@ export const api = {
     handler: (e: import("./search/Search").DownloadResult) => void,
   ): Promise<UnlistenFn> =>
     listen<import("./search/Search").DownloadResult>("search-download", (e) => handler(e.payload)),
+  /** O que a janela de busca fez (janelas novas, downloads), para diagnóstico. */
+  onSearchLog: (handler: (e: { kind: string; detail: string }) => void): Promise<UnlistenFn> =>
+    listen<{ kind: string; detail: string }>("search-log", (e) => handler(e.payload)),
+  /** Baixa um link direto de partitura e importa para a biblioteca. */
+  searchImportUrl: (url: string) => invoke<Song>("search_import_url", { url }),
   writeFile: (path: string, data: Uint8Array) =>
     invoke<void>("write_file", { path, data: Array.from(data) }),
   library: {

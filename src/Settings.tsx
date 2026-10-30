@@ -7,6 +7,7 @@ import { LatencySection } from "./practice/LatencySection";
 import { BackupSection } from "./library/BackupSection";
 import { DisplaySection } from "./ui/DisplaySection";
 import type { Fullscreen } from "./ui/useFullscreen";
+import type { ThemeControl } from "./ui/theme";
 import type { Sound } from "./sound/useSound";
 import type { Updates } from "./updates/useUpdates";
 
@@ -30,6 +31,7 @@ interface Props {
   onError: (message: string) => void;
   onNotice: (message: string) => void;
   screen: Fullscreen;
+  theme: ThemeControl;
   onClose: () => void;
   updates: Updates;
 }
@@ -116,7 +118,7 @@ export function Settings(p: Props) {
           onDownload={p.onDownloadSoundfont}
         />
 
-        <DisplaySection screen={p.screen} />
+        <DisplaySection screen={p.screen} theme={p.theme} />
 
         <LatencySection latency={p.latency} onChange={p.onLatency} registerTap={p.registerTap} />
 
