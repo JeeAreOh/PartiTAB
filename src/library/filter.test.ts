@@ -19,6 +19,7 @@ const song = (s: Partial<Song>): Song => ({
   lastPlayedAt: null,
   bestScore: null,
   lastScore: null,
+  cover: null,
   ...s,
 });
 

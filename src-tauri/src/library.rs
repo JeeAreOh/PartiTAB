@@ -76,6 +76,10 @@ const MIGRATIONS: &[&str] = &[
         PRIMARY KEY (clef, key)
     );
 ",
+    "
+    -- Capa do álbum: caminho da imagem na pasta capas (NULL = capa gerada).
+    ALTER TABLE songs ADD COLUMN cover TEXT;
+",
 ];
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -98,6 +102,8 @@ pub struct Song {
     pub last_played_at: Option<i64>,
     pub best_score: Option<i64>,
     pub last_score: Option<i64>,
+    /// Imagem da capa (caminho no disco); `None` = a interface desenha uma.
+    pub cover: Option<String>,
 }
 
 /// Campos editáveis; os ausentes ficam como estão.
@@ -208,6 +214,7 @@ pub struct CollectionResult {
 pub struct Library {
     conn: Mutex<Connection>,
     files: PathBuf,
+    covers: PathBuf,
 }
 
 type Result<T> = std::result::Result<T, String>;
@@ -229,7 +236,8 @@ const SONG_SELECT: &str = "
            (SELECT COUNT(*) FROM attempts a WHERE a.song_id = s.id),
            (SELECT MAX(played_at) FROM attempts a WHERE a.song_id = s.id),
            (SELECT MAX(score) FROM attempts a WHERE a.song_id = s.id AND a.completed = 1),
-           (SELECT score FROM attempts a WHERE a.song_id = s.id ORDER BY played_at DESC, id DESC LIMIT 1)
+           (SELECT score FROM attempts a WHERE a.song_id = s.id ORDER BY played_at DESC, id DESC LIMIT 1),
+           s.cover
     FROM songs s";
 
 fn song_from_row(r: &Row) -> rusqlite::Result<Song> {
@@ -249,6 +257,7 @@ fn song_from_row(r: &Row) -> rusqlite::Result<Song> {
         last_played_at: r.get(12)?,
         best_score: r.get(13)?,
         last_score: r.get(14)?,
+        cover: r.get(15)?,
     })
 }
 
@@ -257,6 +266,8 @@ impl Library {
     pub fn open(dir: &Path) -> Result<Self> {
         let files = dir.join("partituras");
         fs::create_dir_all(&files).map_err(err)?;
+        let covers = dir.join("capas");
+        fs::create_dir_all(&covers).map_err(err)?;
         let mut conn = Connection::open(dir.join("partitab.db")).map_err(err)?;
         conn.pragma_update(None, "foreign_keys", true)
             .map_err(err)?;
@@ -264,6 +275,7 @@ impl Library {
         Ok(Self {
             conn: Mutex::new(conn),
             files,
+            covers,
         })
     }
 
@@ -454,15 +466,81 @@ impl Library {
 
     pub fn delete(&self, id: i64) -> Result<()> {
         let conn = self.conn.lock().unwrap();
-        let path: String = conn
-            .query_row("SELECT stored_path FROM songs WHERE id = ?1", [id], |r| {
-                r.get(0)
-            })
+        let (path, cover): (String, Option<String>) = conn
+            .query_row(
+                "SELECT stored_path, cover FROM songs WHERE id = ?1",
+                [id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
             .map_err(err)?;
         conn.execute("DELETE FROM songs WHERE id = ?1", [id])
             .map_err(err)?;
         let _ = fs::remove_file(path);
+        if let Some(cover) = cover {
+            let _ = fs::remove_file(cover);
+        }
         Ok(())
+    }
+
+    /// Salva a imagem como capa da música (substitui a anterior).
+    pub fn set_cover(&self, id: i64, data: &[u8], ext: &str) -> Result<Song> {
+        if data.is_empty() {
+            return Err("Imagem vazia".into());
+        }
+        let conn = self.conn.lock().unwrap();
+        let old: Option<String> = conn
+            .query_row("SELECT cover FROM songs WHERE id = ?1", [id], |r| r.get(0))
+            .map_err(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => {
+                    "Partitura não encontrada na biblioteca".to_string()
+                }
+                e => e.to_string(),
+            })?;
+        // O nome muda com o conteúdo, para a interface não mostrar a imagem antiga do cache.
+        let hash = format!("{:x}", Sha256::digest(data));
+        let path = self.covers.join(format!("{id}-{}.{ext}", &hash[..12]));
+        fs::write(&path, data).map_err(err)?;
+        let new = path.to_string_lossy().into_owned();
+        conn.execute(
+            "UPDATE songs SET cover = ?1 WHERE id = ?2",
+            params![new, id],
+        )
+        .map_err(err)?;
+        if let Some(old) = old.filter(|o| *o != new) {
+            let _ = fs::remove_file(old);
+        }
+        get(&conn, id)
+    }
+
+    /// Usa um arquivo de imagem do computador como capa.
+    pub fn set_cover_from_file(&self, id: i64, source: &Path) -> Result<Song> {
+        let ext = match source
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(str::to_lowercase)
+            .as_deref()
+        {
+            Some("jpg" | "jpeg") => "jpg",
+            Some("png") => "png",
+            Some("webp") => "webp",
+            _ => return Err("Escolha uma imagem JPG, PNG ou WebP".into()),
+        };
+        let data = fs::read(source).map_err(|e| format!("Não foi possível ler a imagem: {e}"))?;
+        self.set_cover(id, &data, ext)
+    }
+
+    /// Volta para a capa gerada.
+    pub fn remove_cover(&self, id: i64) -> Result<Song> {
+        let conn = self.conn.lock().unwrap();
+        let old: Option<String> = conn
+            .query_row("SELECT cover FROM songs WHERE id = ?1", [id], |r| r.get(0))
+            .map_err(err)?;
+        conn.execute("UPDATE songs SET cover = NULL WHERE id = ?1", [id])
+            .map_err(err)?;
+        if let Some(old) = old {
+            let _ = fs::remove_file(old);
+        }
+        get(&conn, id)
     }
 
     pub fn record_attempt(&self, a: &Attempt) -> Result<Song> {
@@ -927,6 +1005,39 @@ mod tests {
             assert!(dir.join(&e.file).is_file(), "{}", e.file);
             assert!(!e.title.is_empty() && !e.artist.is_empty() && !e.style.is_empty());
         }
+    }
+
+    #[test]
+    fn covers_are_stored_replaced_and_removed() {
+        let (dir, lib, src) = setup();
+        let id = lib.import(&src, None, None).unwrap().id;
+        assert_eq!(lib.list().unwrap()[0].cover, None);
+
+        let first = lib.set_cover(id, b"jpeg 1", "jpg").unwrap().cover.unwrap();
+        assert!(first.ends_with(".jpg") && Path::new(&first).is_file());
+        // Trocar apaga a imagem antiga.
+        let second = lib.set_cover(id, b"png 2", "png").unwrap().cover.unwrap();
+        assert_ne!(first, second);
+        assert!(!Path::new(&first).exists());
+
+        let image = dir.path().join("capa.JPEG");
+        fs::write(&image, b"jpeg 3").unwrap();
+        let third = lib.set_cover_from_file(id, &image).unwrap().cover.unwrap();
+        assert!(third.ends_with(".jpg") && !Path::new(&second).exists());
+        assert!(
+            lib.set_cover_from_file(id, &dir.path().join("a.gif"))
+                .is_err()
+        );
+        assert!(lib.set_cover(id, b"", "jpg").is_err());
+        assert!(lib.set_cover(999, b"x", "jpg").is_err());
+
+        assert_eq!(lib.remove_cover(id).unwrap().cover, None);
+        assert!(!Path::new(&third).exists());
+
+        // Apagar a música apaga a capa.
+        let cover = lib.set_cover(id, b"jpeg 4", "jpg").unwrap().cover.unwrap();
+        lib.delete(id).unwrap();
+        assert!(!Path::new(&cover).exists());
     }
 
     #[test]

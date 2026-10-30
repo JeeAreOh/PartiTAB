@@ -1,4 +1,5 @@
 mod audio;
+mod covers;
 mod library;
 mod midi;
 mod search;
@@ -205,6 +206,43 @@ fn library_attempts(lib: State<LibraryState>, song_id: i64) -> Result<Vec<Attemp
     lib.get()?.attempts(song_id)
 }
 
+// ----------------------------------------------------------------- capas
+
+#[tauri::command]
+async fn library_find_covers(
+    artist: String,
+    title: String,
+) -> Result<Vec<covers::CoverCandidate>, String> {
+    tauri::async_runtime::spawn_blocking(move || covers::search(&artist, &title))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn library_cover_from_url(app: AppHandle, id: i64, url: String) -> Result<Song, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let (data, ext) = covers::download(&url)?;
+        app.state::<LibraryState>().get()?.set_cover(id, &data, ext)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+fn library_cover_from_file(
+    lib: State<LibraryState>,
+    id: i64,
+    path: String,
+) -> Result<Song, String> {
+    lib.get()?
+        .set_cover_from_file(id, std::path::Path::new(&path))
+}
+
+#[tauri::command]
+fn library_remove_cover(lib: State<LibraryState>, id: i64) -> Result<Song, String> {
+    lib.get()?.remove_cover(id)
+}
+
 /// Coleções de partituras que vêm com o app (pasta resources/collections).
 const COLLECTIONS: &[&str] = &["musetrainer"];
 
@@ -306,6 +344,10 @@ pub fn run() {
             open_search,
             library_error_map,
             library_import_collection,
+            library_find_covers,
+            library_cover_from_url,
+            library_cover_from_file,
+            library_remove_cover,
             reading_cards,
             reading_save,
         ])

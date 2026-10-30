@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, type Attempt, type Song, type SongPatch } from "../api";
 import { ScoreChart } from "./ScoreChart";
+import { Cover } from "./Cover";
+import { CoverPicker } from "./CoverPicker";
+import { open } from "@tauri-apps/plugin-dialog";
 import {
   DEFAULT_FILTERS,
   difficultyCounts,
@@ -21,6 +24,9 @@ interface Props {
   onSearch: () => void;
   onUpdate: (id: number, patch: SongPatch) => Promise<void>;
   onRemove: (id: number) => Promise<void>;
+  /** Música alterada fora do patch (ex.: capa nova). */
+  onSongChanged: (song: Song) => void;
+  onError: (message: string) => void;
 }
 
 const STATUS: [Status, string][] = [
@@ -49,6 +55,7 @@ const MODE_NAMES: Record<string, string> = {
 const HAND_NAMES: Record<string, string> = { right: "Direita", left: "Esquerda", both: "Ambas" };
 
 const FILTERS_KEY = "partitab.libraryFilters";
+const LAYOUT_KEY = "partitab.libraryLayout";
 
 export function Stars({ value }: { value: number | null }) {
   if (!value) return <span className="muted">—</span>;
@@ -102,8 +109,25 @@ export function Library({
   onSearch,
   onUpdate,
   onRemove,
+  onSongChanged,
+  onError,
 }: Props) {
   const [filters, setFilters] = useState<Filters>(loadFilters);
+  const [layout, setLayout] = useState<"list" | "grid">(() => {
+    try {
+      return localStorage.getItem(LAYOUT_KEY) === "grid" ? "grid" : "list";
+    } catch {
+      return "list";
+    }
+  });
+  const changeLayout = (value: "list" | "grid") => {
+    setLayout(value);
+    try {
+      localStorage.setItem(LAYOUT_KEY, value);
+    } catch {
+      /* só perde a preferência */
+    }
+  };
   const [selectedId, setSelectedId] = useState<number | null>(currentId);
 
   useEffect(() => {
@@ -214,6 +238,14 @@ export function Library({
           <span className="muted">
             {list.length} de {songs.length} partitura{songs.length === 1 ? "" : "s"}
           </span>
+          <div className="segmented layout-toggle" role="group" aria-label="Visualização">
+            <button className={layout === "list" ? "on" : ""} onClick={() => changeLayout("list")}>
+              Lista
+            </button>
+            <button className={layout === "grid" ? "on" : ""} onClick={() => changeLayout("grid")}>
+              Capas
+            </button>
+          </div>
           <label className="sort">
             Ordenar por
             <select value={filters.sort} onChange={(e) => set("sort", e.target.value as SortKey)}>
@@ -245,12 +277,50 @@ export function Library({
           <div className="lib-empty">
             <p className="muted">Nenhuma partitura com esses filtros.</p>
           </div>
+        ) : layout === "grid" ? (
+          <div className="song-grid">
+            {list.map((s) => (
+              <div
+                key={s.id}
+                className={[
+                  "song-card",
+                  s.id === selectedId ? "selected" : "",
+                  s.id === currentId ? "current" : "",
+                ].join(" ")}
+                onClick={() => setSelectedId(s.id)}
+                onDoubleClick={() => onOpen(s)}
+              >
+                <div className="song-card-cover">
+                  <Cover title={s.title} artist={s.artist} cover={s.cover} size="md" />
+                  <button
+                    className="card-play"
+                    title="Abrir e praticar"
+                    aria-label={`Abrir ${s.title}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onOpen(s);
+                    }}
+                  >
+                    ▶
+                  </button>
+                  {s.favorite && <span className="card-fav">♥</span>}
+                </div>
+                <b className="card-title">{s.title}</b>
+                <span className="muted small card-artist">{s.artist || "—"}</span>
+                <span className="card-meta">
+                  <Stars value={s.difficulty} />
+                  {s.bestScore !== null && <span className="small">{s.bestScore} pts</span>}
+                </span>
+              </div>
+            ))}
+          </div>
         ) : (
           <table className="songs">
             <thead>
               <tr>
                 <th aria-label="Favorita" />
                 <th aria-label="Abrir" />
+                <th aria-label="Capa" />
                 <th>Título</th>
                 <th>Artista</th>
                 <th>Estilo</th>
@@ -296,6 +366,9 @@ export function Library({
                       ▶
                     </button>
                   </td>
+                  <td className="cover-cell">
+                    <Cover title={s.title} artist={s.artist} cover={s.cover} size="sm" />
+                  </td>
                   <td className="title">
                     {s.title}
                     {s.id === currentId && <span className="badge">aberta</span>}
@@ -325,6 +398,8 @@ export function Library({
           onOpen={() => onOpen(selected)}
           onClose={() => setSelectedId(null)}
           onUpdate={(patch) => onUpdate(selected.id, patch)}
+          onSongChanged={onSongChanged}
+          onError={onError}
           onRemove={async () => {
             if (
               !window.confirm(
@@ -358,9 +433,22 @@ interface DetailsProps {
   onClose: () => void;
   onUpdate: (patch: SongPatch) => Promise<void>;
   onRemove: () => void;
+  onSongChanged: (song: Song) => void;
+  onError: (message: string) => void;
 }
 
-function Details({ song, styles, busy, onOpen, onClose, onUpdate, onRemove }: DetailsProps) {
+function Details({
+  song,
+  styles,
+  busy,
+  onOpen,
+  onClose,
+  onUpdate,
+  onRemove,
+  onSongChanged,
+  onError,
+}: DetailsProps) {
+  const [picking, setPicking] = useState(false);
   const [title, setTitle] = useState(song.title);
   const [artist, setArtist] = useState(song.artist);
   const [style, setStyle] = useState(song.style);
@@ -391,6 +479,50 @@ function Details({ song, styles, busy, onOpen, onClose, onUpdate, onRemove }: De
           ✕
         </button>
       </div>
+      <div className="details-cover">
+        <Cover title={song.title} artist={song.artist} cover={song.cover} size="lg" />
+        <div className="cover-actions">
+          <button onClick={() => setPicking((v) => !v)}>Buscar capa</button>
+          <button
+            onClick={async () => {
+              const path = await open({
+                title: "Escolher imagem da capa",
+                filters: [{ name: "Imagens", extensions: ["jpg", "jpeg", "png", "webp"] }],
+              });
+              if (typeof path !== "string") return;
+              api.library
+                .coverFromFile(song.id, path)
+                .then(onSongChanged)
+                .catch((e) => onError(String(e)));
+            }}
+          >
+            Escolher imagem…
+          </button>
+          {song.cover && (
+            <button
+              className="link"
+              onClick={() =>
+                api.library
+                  .removeCover(song.id)
+                  .then(onSongChanged)
+                  .catch((e) => onError(String(e)))
+              }
+            >
+              Remover capa
+            </button>
+          )}
+        </div>
+      </div>
+      {picking && (
+        <CoverPicker
+          song={song}
+          onChosen={(updated) => {
+            onSongChanged(updated);
+            setPicking(false);
+          }}
+          onClose={() => setPicking(false)}
+        />
+      )}
       <button className="primary" onClick={onOpen} disabled={busy}>
         Abrir e praticar
       </button>

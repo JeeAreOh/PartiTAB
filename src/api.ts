@@ -39,6 +39,16 @@ export interface Song {
   lastPlayedAt: number | null;
   bestScore: number | null;
   lastScore: number | null;
+  /** Caminho da imagem da capa; null = capa gerada. */
+  cover: string | null;
+}
+
+export interface CoverCandidate {
+  url: string;
+  thumb: string;
+  album: string;
+  artist: string;
+  title: string;
 }
 
 export interface SongPatch {
@@ -114,6 +124,12 @@ export const api = {
     remove: (id: number) => invoke<void>("library_delete", { id }),
     recordAttempt: (attempt: Attempt) => invoke<Song>("library_record_attempt", { attempt }),
     attempts: (songId: number) => invoke<Attempt[]>("library_attempts", { songId }),
+    findCovers: (artist: string, title: string) =>
+      invoke<CoverCandidate[]>("library_find_covers", { artist, title }),
+    coverFromUrl: (id: number, url: string) => invoke<Song>("library_cover_from_url", { id, url }),
+    coverFromFile: (id: number, path: string) =>
+      invoke<Song>("library_cover_from_file", { id, path }),
+    removeCover: (id: number) => invoke<Song>("library_remove_cover", { id }),
     importCollection: (name: string) =>
       invoke<{ added: number; existing: number; failed: string[] }>("library_import_collection", {
         name,

@@ -123,6 +123,7 @@ export function useLibrary(onError: (message: string) => void) {
   return {
     songs,
     loaded,
+    put,
     refresh,
     importFile,
     importBytes,

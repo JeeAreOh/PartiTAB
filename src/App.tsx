@@ -4,6 +4,7 @@ import { api, type Song, type Status } from "./api";
 import { Keyboard } from "./Keyboard";
 import { keyName, useScore } from "./useScore";
 import { Library } from "./library/Library";
+import { Cover } from "./library/Cover";
 import { parsePrefs, readMetadata, useLibrary, type SongPrefs } from "./library/useLibrary";
 import { LEVELS, type Level } from "./reducer/reduce";
 import { estimateDifficulty } from "./reducer/harmony";
@@ -644,9 +645,19 @@ function App() {
       {view === "score" && state.tracks.length > 0 && (
         <>
           <section className="scorebar">
-            <div className="song-info">
-              <h2>{currentSong?.title ?? "Partitura"}</h2>
-              <p>{[currentSong?.artist, trackName].filter(Boolean).join(" · ")}</p>
+            <div className="song-head">
+              {currentSong && (
+                <Cover
+                  title={currentSong.title}
+                  artist={currentSong.artist}
+                  cover={currentSong.cover}
+                  size="sm"
+                />
+              )}
+              <div className="song-info">
+                <h2>{currentSong?.title ?? "Partitura"}</h2>
+                <p>{[currentSong?.artist, trackName].filter(Boolean).join(" · ")}</p>
+              </div>
             </div>
 
             <div className="transport">
@@ -1159,6 +1170,8 @@ function App() {
               onOpen={(song) => run(() => openSong(song))}
               onImport={addToLibrary}
               onSearch={() => setView("search")}
+              onSongChanged={library.put}
+              onError={setError}
               onUpdate={library.update}
               onRemove={async (id) => {
                 await library.remove(id);

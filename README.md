@@ -62,6 +62,10 @@ A aba **Buscar** procura a música no Cifra Club, Ultimate Guitar, Songsterr, Mu
 - **Leitura** (aba própria). Cartões com uma nota na pauta; toque a nota no teclado. Clave de sol, de fá ou as duas; só na pauta ou com linhas suplementares; com ou sem sustenidos e bemóis; opção de esconder o teclado virtual. Repetição espaçada: notas erradas ou lentas (mais de 2,5 s) voltam mais vezes, e o histórico fica salvo entre sessões. Sessões de 20 cartões, com as notas mais difíceis ao lado.
 - **Evolução da nota** no detalhe de cada música da biblioteca (execuções completas com ponto cheio, incompletas vazado).
 
+**Capas de álbum**
+
+Cada música pode ter uma capa, mostrada na lista, na visão **Capas** da biblioteca (grade), no detalhe e na barra da partitura. No detalhe da música: **Buscar capa** procura no catálogo do iTunes pelo artista e título (você escolhe a certa entre as opções), **Escolher imagem…** usa um JPG/PNG/WebP do computador e **Remover capa** volta para a capa desenhada pelo app (degradê com as iniciais e o artista), que toda música sem imagem ganha. As imagens ficam na pasta `capas` dos dados do app.
+
 **Coleção gratuita MuseTrainer**
 
 Na primeira abertura, 63 partituras de piano em domínio público entram na biblioteca, já com título, compositor e estilo (Barroco, Clássico, Romântico, Impressionista, Ragtime, Tradicional, Natal): Bach, Mozart, Beethoven, Chopin, Debussy, Satie, Joplin, Tchaikovsky e outros, várias com versão fácil. Os arquivos vêm com o app ([origem e detalhes](src-tauri/resources/collections/musetrainer/LEIAME.md)); se você apagar alguma, **Buscar → Coleções gratuitas → Adicionar à biblioteca** traz de volta sem duplicar. Seis arquivos da coleção original ficaram de fora porque as composições ainda têm direitos autorais.
