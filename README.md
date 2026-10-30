@@ -55,7 +55,7 @@ Em **Vídeo**, cole o link. O vídeo passa a ser o relógio: a partitura, o curs
 
 **Buscar partituras**
 
-A aba **Buscar** procura a música no Cifra Club, Ultimate Guitar, Songsterr, MuseScore, IMSLP ou na web, ou abre qualquer endereço. O site abre numa janela do próprio PartiTAB e funciona como num navegador: login, assinatura e regras de cada site continuam valendo. Todo arquivo Guitar Pro ou MusicXML baixado ali entra direto na biblioteca; PDF, MIDI e arquivos do MuseScore (.mscz) são recusados com a explicação. O app não raspa nem baixa nada dos sites por conta própria. Abas novas que o site abre (como o botão Guitar Pro do Cifra Club) viram janelas do app, e o nome do arquivo é lido também do link (`...?arq=musica.gp3`); um link direto de arquivo `.gp`/`.mxl` colado no campo de endereço é baixado direto para a biblioteca. **Registro da janela de busca**, no fim da aba, mostra cada janela nova e download, para entender quando algo não chega.
+A aba **Buscar** procura a música no Cifra Club, Ultimate Guitar, Songsterr, MuseScore, IMSLP ou na web, ou abre qualquer endereço. O site abre numa janela do próprio PartiTAB e funciona como num navegador: login, assinatura e regras de cada site continuam valendo. Todo arquivo Guitar Pro, MusicXML ou MIDI baixado ali entra direto na biblioteca; PDF e arquivos do MuseScore (.mscz) são recusados; MIDI entra e vira partitura de piano com a explicação. O app não raspa nem baixa nada dos sites por conta própria. Abas novas que o site abre (como o botão Guitar Pro do Cifra Club) viram janelas do app, e o nome do arquivo é lido também do link (`...?arq=musica.gp3`); um link direto de arquivo `.gp`/`.mxl` colado no campo de endereço é baixado direto para a biblioteca. **Registro da janela de busca**, no fim da aba, mostra cada janela nova e download, para entender quando algo não chega.
 
 **Fase 5 — prática dirigida**
 
@@ -104,7 +104,15 @@ Em **Arranjo**, qualquer partitura (tabs de guitarra inclusive) vira uma faixa d
 - **Tom fácil**: transpõe para Dó, Sol ou Fá (ou Lá, Mi, Ré menor), o mais próximo; a banda é transposta junto na reprodução. A melodia fica perto do dó central e tudo cabe nas 61 teclas.
 - **Salvar na biblioteca** guarda o arranjo como uma partitura nova; **Exportar…** gera um `.gp` que abre no MuseScore para ajustes à mão.
 
-Arquivos MIDI (`.mid`) ainda não abrem: o alphaTab não importa MIDI. Fica para quando a separação de mãos por altura for implementada.
+### Arquivos MIDI
+
+Arquivos `.mid` abrem como qualquer partitura (Abrir, Adicionar partituras, Buscar). Ao abrir, o app converte o MIDI numa partitura de piano com duas pautas:
+
+- **Mãos.** Com duas faixas de notas, cada faixa é uma mão: o nome decide ("RH"/"LH", "direita"/"esquerda", "melody"/"bass"), senão a mais aguda fica na direita. Com uma faixa só, as notas se dividem pelo dó central.
+- **Ritmo.** As notas são alinhadas à semicolcheia; MIDI tocado à mão fica legível, e tercinas viram aproximações. Nota longa sob notas rápidas vira uma segunda voz.
+- **Andamento, fórmula de compasso e armadura** vêm do arquivo. A bateria (canal 10) fica de fora.
+
+O arquivo original continua na biblioteca; a conversão é refeita ao abrir.
 
 ## Versões e instalador
 
@@ -170,6 +178,7 @@ src/
     recording.ts     gravação e exportação MIDI (useRecorder.ts: gravar e ouvir)
     fingering.ts     dedilhado sugerido (programação dinâmica por mão)
     FallingNotes.tsx visão "notas caindo"
+  midi/              MIDI → MusicXML de piano (duas pautas, mãos, ritmo alinhado)
   progress/          painel de progresso (summary.ts: resumo por dia, sequência, evolução)
   sound/             seletor de timbre, ajustes de som e catálogo de SoundFonts
   Keyboard.tsx       teclado de 61 teclas

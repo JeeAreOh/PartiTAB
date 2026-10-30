@@ -6,6 +6,7 @@ import { DEFAULT_DISPLAY, keyName, useScore, type Display } from "./useScore";
 import { Library } from "./library/Library";
 import { Cover } from "./library/Cover";
 import { parsePrefs, readMetadata, useLibrary, type SongPrefs } from "./library/useLibrary";
+import { toScoreBytes } from "./midi/midiToMusicXml";
 import { LEVELS, type Level } from "./reducer/reduce";
 import { estimateDifficulty } from "./reducer/harmony";
 import { usePractice, type Mode } from "./practice/usePractice";
@@ -67,7 +68,7 @@ function readViewPrefs(): ViewPrefs {
 /** Coleções já trazidas para a biblioteca na primeira abertura. */
 const COLLECTIONS_DONE = "partitab.collections";
 const MOUSE_VELOCITY = 90;
-const SCORE_EXTENSIONS = ["gp", "gp3", "gp4", "gp5", "gpx", "musicxml", "mxl", "xml", "cap"];
+const SCORE_EXTENSIONS = ["gp", "gp3", "gp4", "gp5", "gpx", "musicxml", "mxl", "xml", "cap", "mid", "midi"];
 
 const storage = {
   get: (k: string) => {
@@ -253,7 +254,7 @@ function App() {
   /** Abre uma música da biblioteca, com o arranjo e a faixa da última vez. */
   const openSong = useCallback(
     async (song: Song) => {
-      const data = await api.readFile(song.path);
+      const data = toScoreBytes(await api.readFile(song.path), song.title);
       const prefs = parsePrefs(song);
       const options =
         prefs.level && prefs.melody != null
@@ -273,7 +274,7 @@ function App() {
   /** Abre um arquivo do disco: entra na biblioteca (sem duplicar) e abre. */
   const openFile = useCallback(
     async (path: string) => {
-      const data = await api.readFile(path);
+      const data = toScoreBytes(await api.readFile(path));
       const meta = readMetadata(data);
       if (!meta) throw new Error(`Formato não reconhecido: ${fileName(path)}`);
       await openSong(await library.importFile(path, meta));
@@ -440,7 +441,7 @@ function App() {
       .catch((e) => setError(String(e)));
 
   const scoreFilter = {
-    name: "Partituras (Guitar Pro, MusicXML, Capella)",
+    name: "Partituras (Guitar Pro, MusicXML, Capella, MIDI)",
     extensions: SCORE_EXTENSIONS,
   };
 
@@ -462,7 +463,7 @@ function App() {
       const failed: string[] = [];
       for (const path of Array.isArray(paths) ? paths : [paths]) {
         try {
-          const meta = readMetadata(await api.readFile(path));
+          const meta = readMetadata(toScoreBytes(await api.readFile(path)));
           if (!meta) throw new Error();
           await library.importFile(path, meta);
         } catch {

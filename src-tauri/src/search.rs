@@ -14,7 +14,7 @@ const WINDOW: &str = "busca";
 
 /// Formatos que o app abre (os mesmos do diálogo "Abrir arquivo").
 const SCORE_EXTENSIONS: &[&str] = &[
-    "gp", "gp3", "gp4", "gp5", "gpx", "musicxml", "mxl", "xml", "cap",
+    "gp", "gp3", "gp4", "gp5", "gpx", "musicxml", "mxl", "xml", "cap", "mid", "midi",
 ];
 
 /// Resultado de um download feito no navegador de busca.
@@ -79,7 +79,6 @@ fn ignored_reason(path: &Path) -> String {
         .as_deref()
     {
         Some("pdf") => "PDF é imagem da partitura; o app precisa de Guitar Pro ou MusicXML".into(),
-        Some("mid" | "midi") => "MIDI ainda não é suportado".into(),
         Some("mscz" | "mscx") => "arquivo do MuseScore: exporte como MusicXML no MuseScore".into(),
         Some("zip") => "arquivo compactado: extraia e use Adicionar partituras".into(),
         _ => "não é um formato de partitura suportado".into(),
@@ -297,6 +296,8 @@ fn sniff_extension(data: &[u8]) -> Option<&'static str> {
         Some("gp5")
     } else if data.starts_with(b"BCF") {
         Some("gpx")
+    } else if data.starts_with(b"MThd") {
+        Some("mid")
     } else if data.starts_with(b"PK") {
         // Guitar Pro 7/8 (.gp) e MusicXML compactado (.mxl) são zip.
         let text = String::from_utf8_lossy(data);
@@ -397,6 +398,7 @@ mod tests {
             Some("gp5")
         );
         assert_eq!(sniff_extension(b"BCFZ...."), Some("gpx"));
+        assert_eq!(sniff_extension(b"MThd\0\0\0\x06"), Some("mid"));
         assert_eq!(
             sniff_extension(b"PK\x03\x04...Content/score.gpif"),
             Some("gp")
@@ -442,10 +444,10 @@ mod tests {
 
     #[test]
     fn recognizes_score_files_case_insensitively() {
-        for name in ["a.gp5", "b.GPX", "c.gp", "d.musicxml", "e.MXL", "f.xml"] {
+        for name in ["a.gp5", "b.GPX", "c.gp", "d.musicxml", "e.MXL", "f.xml", "g.mid", "h.MIDI"] {
             assert!(is_score_file(Path::new(name)), "{name}");
         }
-        for name in ["a.pdf", "b.mid", "c.mscz", "d", "e.gp5.part"] {
+        for name in ["a.pdf", "c.mscz", "d", "e.gp5.part"] {
             assert!(!is_score_file(Path::new(name)), "{name}");
         }
     }
@@ -466,6 +468,5 @@ mod tests {
     fn explains_unsupported_files() {
         assert!(ignored_reason(Path::new("x.PDF")).contains("PDF"));
         assert!(ignored_reason(Path::new("x.mscz")).contains("MusicXML"));
-        assert!(ignored_reason(Path::new("x.mid")).contains("MIDI"));
     }
 }

@@ -96,7 +96,7 @@ export interface SearchLogEntry {
 
 /** O endereço parece um arquivo de partitura (e não uma página)? */
 export const looksLikeScoreLink = (text: string) =>
-  /\.(gp|gp3|gp4|gp5|gpx|musicxml|mxl|xml|cap)(\?|#|&|$)/i.test(text.trim());
+  /\.(gp|gp3|gp4|gp5|gpx|musicxml|mxl|xml|cap|mid|midi)(\?|#|&|$)/i.test(text.trim());
 
 interface Props {
   log: SearchLogEntry[];

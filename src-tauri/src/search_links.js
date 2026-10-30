@@ -4,7 +4,7 @@
 // qualquer código do site: assim o download começa e vai para a biblioteca.
 (function () {
   var SCORE =
-    /\.(gp|gp3|gp4|gp5|gpx|musicxml|mxl|cap)(\?|#|&|$)|[?&][^=&]+=[^&#]*\.(gp|gp3|gp4|gp5|gpx|musicxml|mxl)(&|#|$)|gp_partitura_download/i;
+    /\.(gp|gp3|gp4|gp5|gpx|musicxml|mxl|cap|mid|midi)(\?|#|&|$)|[?&][^=&]+=[^&#]*\.(gp|gp3|gp4|gp5|gpx|musicxml|mxl|mid|midi)(&|#|$)|gp_partitura_download/i;
   window.addEventListener(
     "click",
     function (e) {
