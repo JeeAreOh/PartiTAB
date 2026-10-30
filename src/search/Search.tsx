@@ -18,6 +18,16 @@ export interface Source {
  */
 export const SOURCES: Source[] = [
   {
+    id: "cifraclub",
+    name: "Cifra Club",
+    description:
+      "Cifras e tabs de música brasileira. A busca mostra as páginas do Cifra Club; um Guitar Pro baixado lá entra na biblioteca.",
+    formats: ["Guitar Pro"],
+    // Busca restrita ao site (o endereço de busca do próprio Cifra Club pode mudar).
+    search: "https://duckduckgo.com/?q=site%3Acifraclub.com.br+{q}",
+    home: "https://www.cifraclub.com.br/",
+  },
+  {
     id: "ug",
     name: "Ultimate Guitar",
     description: "Maior acervo de tabs. Arquivos Guitar Pro pedem conta gratuita.",
@@ -67,13 +77,26 @@ export type DownloadResult =
   | { type: "ignored"; fileName: string; reason: string }
   | { type: "failed"; fileName: string; reason: string };
 
+/** Coleções gratuitas que vêm com o app. */
+export const COLLECTIONS = [
+  {
+    id: "musetrainer",
+    name: "MuseTrainer",
+    description:
+      "63 partituras de piano em domínio público: Bach, Mozart, Beethoven, Chopin, Debussy, Satie, Joplin e mais, várias com versão fácil.",
+    url: "https://musetrainer.github.io/library/",
+  },
+];
+
 interface Props {
+  onAddCollection: (id: string) => void;
+  busy: boolean;
   downloads: DownloadResult[];
   onOpenUrl: (url: string) => void;
   onOpenSong: (song: Song) => void;
 }
 
-export function Search({ downloads, onOpenUrl, onOpenSong }: Props) {
+export function Search({ downloads, onOpenUrl, onOpenSong, onAddCollection, busy }: Props) {
   const [query, setQuery] = useState("");
   const [address, setAddress] = useState("");
 
@@ -124,6 +147,21 @@ export function Search({ downloads, onOpenUrl, onOpenSong }: Props) {
               ))}
             </span>
           </button>
+        ))}
+      </div>
+
+      <div className="collections">
+        <h3>Coleções gratuitas</h3>
+        {COLLECTIONS.map((c) => (
+          <div key={c.id} className="collection">
+            <div>
+              <b>{c.name}</b>
+              <p className="muted small">{c.description}</p>
+            </div>
+            <button onClick={() => onAddCollection(c.id)} disabled={busy}>
+              Adicionar à biblioteca
+            </button>
+          </div>
         ))}
       </div>
 

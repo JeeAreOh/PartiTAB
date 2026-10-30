@@ -10,7 +10,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, RunEvent, State};
 
 use audio::{AudioCommand, AudioEngine, AudioInfo};
-use library::{Attempt, ErrorMap, Library, ReadingCard, Song, SongPatch};
+use library::{Attempt, CollectionResult, ErrorMap, Library, ReadingCard, Song, SongPatch};
 use midi::{MidiSession, SynthMessage};
 
 struct AppState {
@@ -205,6 +205,30 @@ fn library_attempts(lib: State<LibraryState>, song_id: i64) -> Result<Vec<Attemp
     lib.get()?.attempts(song_id)
 }
 
+/// Coleções de partituras que vêm com o app (pasta resources/collections).
+const COLLECTIONS: &[&str] = &["musetrainer"];
+
+#[tauri::command]
+async fn library_import_collection(
+    app: AppHandle,
+    name: String,
+) -> Result<CollectionResult, String> {
+    if !COLLECTIONS.contains(&name.as_str()) {
+        return Err(format!("Coleção desconhecida: {name}"));
+    }
+    let dir = app
+        .path()
+        .resource_dir()
+        .map_err(|e| e.to_string())?
+        .join("collections")
+        .join(&name);
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<LibraryState>().get()?.import_collection(&dir)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 #[tauri::command]
 fn library_error_map(
     lib: State<LibraryState>,
@@ -281,6 +305,7 @@ pub fn run() {
             library_attempts,
             open_search,
             library_error_map,
+            library_import_collection,
             reading_cards,
             reading_save,
         ])

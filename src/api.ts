@@ -114,6 +114,10 @@ export const api = {
     remove: (id: number) => invoke<void>("library_delete", { id }),
     recordAttempt: (attempt: Attempt) => invoke<Song>("library_record_attempt", { attempt }),
     attempts: (songId: number) => invoke<Attempt[]>("library_attempts", { songId }),
+    importCollection: (name: string) =>
+      invoke<{ added: number; existing: number; failed: string[] }>("library_import_collection", {
+        name,
+      }),
     errorMap: (songId: number, last = 10) =>
       invoke<ErrorMap>("library_error_map", { songId, last }),
   },

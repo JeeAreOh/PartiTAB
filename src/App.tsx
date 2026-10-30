@@ -27,6 +27,8 @@ const LAST_SOUNDFONT = "partitab.soundfont";
 /** Caminho da última partitura (versões antes da biblioteca). */
 const LAST_SCORE = "partitab.score";
 const LAST_SONG = "partitab.songId";
+/** Coleções já trazidas para a biblioteca na primeira abertura. */
+const COLLECTIONS_DONE = "partitab.collections";
 const MOUSE_VELOCITY = 90;
 const SCORE_EXTENSIONS = ["gp", "gp3", "gp4", "gp5", "gpx", "musicxml", "mxl", "xml", "cap"];
 
@@ -213,6 +215,17 @@ function App() {
       if (port && list.includes(port) && !current.midiPort) {
         setSelected(port);
         current = await api.connectMidi(port).catch(() => current);
+      }
+      // Na primeira abertura, a coleção gratuita entra na biblioteca.
+      if (!storage.get(COLLECTIONS_DONE)) {
+        const result = await api.library.importCollection("musetrainer").catch(() => null);
+        if (result) {
+          storage.set(COLLECTIONS_DONE, "musetrainer");
+          if (result.added > 0) {
+            library.refresh();
+            setNotice(`${result.added} partituras da coleção MuseTrainer entraram na biblioteca`);
+          }
+        }
       }
       const songs = await api.library.list().catch(() => [] as Song[]);
       const lastSong = songs.find((s) => String(s.id) === storage.get(LAST_SONG));
@@ -1169,6 +1182,18 @@ function App() {
             <Search
               downloads={downloads}
               onOpenUrl={(url) => run(() => api.openSearch(url))}
+              busy={busy}
+              onAddCollection={(name) =>
+                run(async () => {
+                  const r = await api.library.importCollection(name);
+                  await library.refresh();
+                  setNotice(
+                    r.added > 0
+                      ? `${r.added} partituras adicionadas${r.existing ? ` (${r.existing} já estavam na biblioteca)` : ""}`
+                      : "Todas as partituras dessa coleção já estão na biblioteca",
+                  );
+                })
+              }
               onOpenSong={(song) => run(() => openSong(song))}
             />
           </div>

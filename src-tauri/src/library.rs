@@ -189,6 +189,22 @@ pub struct ReadingCard {
     pub last_seen: Option<i64>,
 }
 
+#[derive(Debug, Deserialize)]
+struct CollectionEntry {
+    file: String,
+    title: String,
+    artist: String,
+    #[serde(default)]
+    style: String,
+}
+
+#[derive(Debug, Default, Serialize, PartialEq)]
+pub struct CollectionResult {
+    pub added: usize,
+    pub existing: usize,
+    pub failed: Vec<String>,
+}
+
 pub struct Library {
     conn: Mutex<Connection>,
     files: PathBuf,
@@ -270,6 +286,18 @@ impl Library {
         title: Option<&str>,
         artist: Option<&str>,
     ) -> Result<Song> {
+        self.import_bytes_status(file_name, data, title, artist)
+            .map(|(song, _)| song)
+    }
+
+    /// Como `import_bytes`, dizendo também se a música é nova na biblioteca.
+    fn import_bytes_status(
+        &self,
+        file_name: &str,
+        data: &[u8],
+        title: Option<&str>,
+        artist: Option<&str>,
+    ) -> Result<(Song, bool)> {
         let hash = format!("{:x}", Sha256::digest(data));
         let conn = self.conn.lock().unwrap();
 
@@ -288,7 +316,7 @@ impl Library {
                 )
                 .map_err(err)?;
             }
-            return get(&conn, id);
+            return get(&conn, id).map(|song| (song, false));
         }
 
         let path = Path::new(file_name);
@@ -317,7 +345,45 @@ impl Library {
             ],
         )
         .map_err(err)?;
-        get(&conn, conn.last_insert_rowid())
+        get(&conn, conn.last_insert_rowid()).map(|song| (song, true))
+    }
+
+    /// Importa uma coleção que vem com o app: uma pasta com `catalog.json`
+    /// (arquivo, título, compositor, estilo) e as partituras. Pode rodar de novo:
+    /// o que já está na biblioteca não é duplicado nem alterado.
+    pub fn import_collection(&self, dir: &Path) -> Result<CollectionResult> {
+        let catalog = fs::read_to_string(dir.join("catalog.json"))
+            .map_err(|e| format!("Coleção não encontrada: {e}"))?;
+        let entries: Vec<CollectionEntry> =
+            serde_json::from_str(&catalog).map_err(|e| format!("Catálogo inválido: {e}"))?;
+        let mut result = CollectionResult::default();
+        for entry in entries {
+            let imported = fs::read(dir.join(&entry.file))
+                .map_err(err)
+                .and_then(|data| {
+                    self.import_bytes_status(
+                        &entry.file,
+                        &data,
+                        Some(&entry.title),
+                        Some(&entry.artist),
+                    )
+                });
+            match imported {
+                Ok((song, true)) => {
+                    if !entry.style.is_empty() {
+                        let patch = SongPatch {
+                            style: Some(entry.style),
+                            ..Default::default()
+                        };
+                        self.update(song.id, patch)?;
+                    }
+                    result.added += 1;
+                }
+                Ok((_, false)) => result.existing += 1,
+                Err(_) => result.failed.push(entry.file),
+            }
+        }
+        Ok(result)
     }
 
     pub fn list(&self) -> Result<Vec<Song>> {
@@ -811,6 +877,56 @@ mod tests {
         let json = serde_json::to_value(&cards[0]).unwrap();
         assert_eq!(json["box"], 5);
         assert_eq!(json["totalMs"], 1500);
+    }
+
+    #[test]
+    fn collection_import_is_idempotent_and_keeps_user_edits() {
+        let (dir, lib, _src) = setup();
+        let col = dir.path().join("colecao");
+        fs::create_dir_all(&col).unwrap();
+        fs::write(col.join("a.mxl"), b"partitura a").unwrap();
+        fs::write(col.join("b.mxl"), b"partitura b").unwrap();
+        fs::write(
+            col.join("catalog.json"),
+            r#"[{"file":"a.mxl","title":"Für Elise","artist":"Beethoven","style":"Clássico"},
+                {"file":"b.mxl","title":"Cânone","artist":"Pachelbel","style":"Barroco"},
+                {"file":"faltando.mxl","title":"X","artist":"Y"}]"#,
+        )
+        .unwrap();
+
+        let first = lib.import_collection(&col).unwrap();
+        assert_eq!((first.added, first.existing), (2, 0));
+        assert_eq!(first.failed, vec!["faltando.mxl".to_string()]);
+        let songs = lib.list().unwrap();
+        let elise = songs.iter().find(|s| s.title == "Für Elise").unwrap();
+        assert_eq!(
+            (elise.artist.as_str(), elise.style.as_str()),
+            ("Beethoven", "Clássico")
+        );
+
+        // O usuário muda o estilo; importar de novo não duplica nem desfaz.
+        let patch = SongPatch {
+            style: Some("Estudo".into()),
+            ..Default::default()
+        };
+        lib.update(elise.id, patch).unwrap();
+        let again = lib.import_collection(&col).unwrap();
+        assert_eq!((again.added, again.existing), (0, 2));
+        assert_eq!(lib.list().unwrap().len(), 2);
+        assert!(lib.list().unwrap().iter().any(|s| s.style == "Estudo"));
+        assert!(lib.import_collection(&dir.path().join("nada")).is_err());
+    }
+
+    #[test]
+    fn bundled_musetrainer_catalog_matches_its_files() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("resources/collections/musetrainer");
+        let entries: Vec<CollectionEntry> =
+            serde_json::from_str(&fs::read_to_string(dir.join("catalog.json")).unwrap()).unwrap();
+        assert_eq!(entries.len(), 63);
+        for e in &entries {
+            assert!(dir.join(&e.file).is_file(), "{}", e.file);
+            assert!(!e.title.is_empty() && !e.artist.is_empty() && !e.style.is_empty());
+        }
     }
 
     #[test]

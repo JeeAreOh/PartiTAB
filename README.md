@@ -52,7 +52,7 @@ Em **Vídeo**, cole o link. O vídeo passa a ser o relógio: a partitura, o curs
 
 **Buscar partituras**
 
-A aba **Buscar** procura a música no Ultimate Guitar, Songsterr, MuseScore, IMSLP ou na web, ou abre qualquer endereço. O site abre numa janela do próprio PartiTAB e funciona como num navegador: login, assinatura e regras de cada site continuam valendo. Todo arquivo Guitar Pro ou MusicXML baixado ali entra direto na biblioteca; PDF, MIDI e arquivos do MuseScore (.mscz) são recusados com a explicação. O app não raspa nem baixa nada dos sites por conta própria.
+A aba **Buscar** procura a música no Cifra Club, Ultimate Guitar, Songsterr, MuseScore, IMSLP ou na web, ou abre qualquer endereço. O site abre numa janela do próprio PartiTAB e funciona como num navegador: login, assinatura e regras de cada site continuam valendo. Todo arquivo Guitar Pro ou MusicXML baixado ali entra direto na biblioteca; PDF, MIDI e arquivos do MuseScore (.mscz) são recusados com a explicação. O app não raspa nem baixa nada dos sites por conta própria.
 
 **Fase 5 — prática dirigida**
 
@@ -61,6 +61,10 @@ A aba **Buscar** procura a música no Ultimate Guitar, Songsterr, MuseScore, IMS
 - **Treinar os piores trechos.** Uma sessão curta: cada trecho em loop com a rampa, e ao dominar um o app passa para o próximo.
 - **Leitura** (aba própria). Cartões com uma nota na pauta; toque a nota no teclado. Clave de sol, de fá ou as duas; só na pauta ou com linhas suplementares; com ou sem sustenidos e bemóis; opção de esconder o teclado virtual. Repetição espaçada: notas erradas ou lentas (mais de 2,5 s) voltam mais vezes, e o histórico fica salvo entre sessões. Sessões de 20 cartões, com as notas mais difíceis ao lado.
 - **Evolução da nota** no detalhe de cada música da biblioteca (execuções completas com ponto cheio, incompletas vazado).
+
+**Coleção gratuita MuseTrainer**
+
+Na primeira abertura, 63 partituras de piano em domínio público entram na biblioteca, já com título, compositor e estilo (Barroco, Clássico, Romântico, Impressionista, Ragtime, Tradicional, Natal): Bach, Mozart, Beethoven, Chopin, Debussy, Satie, Joplin, Tchaikovsky e outros, várias com versão fácil. Os arquivos vêm com o app ([origem e detalhes](src-tauri/resources/collections/musetrainer/LEIAME.md)); se você apagar alguma, **Buscar → Coleções gratuitas → Adicionar à biblioteca** traz de volta sem duplicar. Seis arquivos da coleção original ficaram de fora porque as composições ainda têm direitos autorais.
 
 **Biblioteca de partituras**
 
