@@ -21,13 +21,13 @@ export function useUpdates() {
     }
   }, []);
 
-  // Ao abrir: lê a versão e, com token configurado, já verifica.
+  // Ao abrir: lê a versão e já verifica (o token só é preciso com o repositório privado).
   useEffect(() => {
     api.updates
       .status()
       .then((s) => {
         setStatus(s);
-        if (s.configured) check();
+        check();
       })
       .catch(() => undefined);
   }, [check]);
@@ -38,7 +38,7 @@ export function useUpdates() {
       const s = await api.updates.status();
       setStatus(s);
       setInfo(null);
-      if (s.configured) await check();
+      await check();
     },
     [check],
   );

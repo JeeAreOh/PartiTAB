@@ -867,21 +867,17 @@ export const HELP_TOPICS: HelpTopic[] = [
     body: (
       <>
         <p>
-          Em <b>Ajustes → Atualizações</b> aparece a versão instalada. Como o repositório é
-          privado, o app precisa de um token do GitHub para ver as versões novas:
+          Ao abrir, o app verifica se há versão nova. Havendo, aparece um aviso no topo, e em{" "}
+          <b>Ajustes → Atualizações</b> o botão <b>Atualizar agora</b> baixa o instalador, fecha o
+          app e abre o instalador. A biblioteca e os ajustes são mantidos. <b>Verificar agora</b>{" "}
+          consulta de novo; <b>Ver todas as versões no GitHub</b> abre a página de versões no
+          navegador.
         </p>
-        <ol>
-          <li>
-            No GitHub, crie um <i>fine-grained personal access token</i> com acesso só ao
-            repositório do PartiTAB e permissão <b>Contents: Read-only</b>.
-          </li>
-          <li>Cole o token no campo. Ele fica salvo só neste computador.</li>
-        </ol>
         <p>
-          Com o token, o app verifica ao abrir; havendo versão nova, aparece um aviso no topo e{" "}
-          <b>Atualizar agora</b> baixa o instalador, fecha o app e abre o instalador. A biblioteca e
-          os ajustes são mantidos. Sem token, <b>Ver todas as versões no GitHub</b> abre a página
-          de versões no navegador.
+          <b>Usar token (repositório privado)</b> só é preciso se o repositório do PartiTAB no
+          GitHub estiver privado: crie um <i>fine-grained personal access token</i> com acesso só a
+          ele e permissão <b>Contents: Read-only</b>, e cole no campo. O token fica salvo só neste
+          computador.
         </p>
       </>
     ),

@@ -1,0 +1,16 @@
+name: Sugerir uma ideia
+description: Uma função nova ou uma melhoria
+labels: [ideia]
+body:
+  - type: textarea
+    id: ideia
+    attributes:
+      label: Qual é a ideia
+      description: O que você gostaria que o PartiTAB fizesse?
+    validations:
+      required: true
+  - type: textarea
+    id: porque
+    attributes:
+      label: Para que serviria
+      description: Em que situação de estudo isso ajudaria?

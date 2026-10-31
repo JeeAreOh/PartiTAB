@@ -11,7 +11,7 @@ export function UpdatesSection({ updates }: { updates: Updates }) {
   const [editing, setEditing] = useState(false);
   const [token, setToken] = useState("");
   const releases = status ? `https://github.com/${status.repo}/releases` : null;
-  const showTokenForm = status !== null && (!status.configured || editing);
+  const showTokenForm = status !== null && editing;
 
   const save = async () => {
     await updates.saveToken(token);
@@ -37,7 +37,7 @@ export function UpdatesSection({ updates }: { updates: Updates }) {
         )}
       </dl>
 
-      {status?.configured && !editing && (
+      {!editing && (
         <>
           {checking && <p className="muted">Verificando…</p>}
           {error && <p className="warn">{error}</p>}
@@ -64,8 +64,13 @@ export function UpdatesSection({ updates }: { updates: Updates }) {
               Verificar agora
             </button>
             <button className="link" onClick={() => setEditing(true)}>
-              Trocar token
+              {status?.configured ? "Trocar token" : "Usar token (repositório privado)"}
             </button>
+            {status?.configured && (
+              <button className="link" onClick={() => updates.saveToken("")}>
+                Remover token
+              </button>
+            )}
           </div>
         </>
       )}
@@ -79,10 +84,9 @@ export function UpdatesSection({ updates }: { updates: Updates }) {
           }}
         >
           <p className="muted small">
-            As versões ficam no repositório privado do PartiTAB no GitHub. Para o app verificar e
-            baixar sozinho, cole um token de acesso pessoal (fine-grained) com acesso só ao
-            repositório <b>{status?.repo}</b> e permissão <b>Contents: Read-only</b>. Ele fica salvo
-            só neste computador.
+            Só é preciso se o repositório <b>{status?.repo}</b> no GitHub for privado. Cole um token
+            de acesso pessoal (fine-grained) com acesso só a esse repositório e permissão{" "}
+            <b>Contents: Read-only</b>. Ele fica salvo só neste computador.
           </p>
           <input
             type="password"
@@ -99,11 +103,9 @@ export function UpdatesSection({ updates }: { updates: Updates }) {
             <button type="button" className="link" onClick={() => openUrl(TOKEN_HELP)}>
               Criar token no GitHub
             </button>
-            {editing && (
-              <button type="button" className="link" onClick={() => setEditing(false)}>
-                Cancelar
-              </button>
-            )}
+            <button type="button" className="link" onClick={() => setEditing(false)}>
+              Cancelar
+            </button>
           </div>
         </form>
       )}

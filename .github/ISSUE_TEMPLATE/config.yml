@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Ajuda dentro do app
+    url: https://github.com/JeeAreOh/PartiTAB#primeiros-passos
+    about: Antes de abrir uma issue, veja a Ajuda do app (botão ? ou F1) e os primeiros passos.

@@ -1,8 +1,10 @@
 [package]
 name = "partitab"
-version = "0.3.5"
+version = "0.4.0"
 description = "Leitor de partitura e prática de piano"
 authors = ["Gefferson Oliveira"]
+license = "GPL-3.0-or-later"
+repository = "https://github.com/JeeAreOh/PartiTAB"
 edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

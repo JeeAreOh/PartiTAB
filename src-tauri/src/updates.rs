@@ -1,6 +1,7 @@
 //! Verificador de versão. As versões são publicadas como releases do
-//! repositório (privado) no GitHub; para ler e baixar, o app usa um token
-//! pessoal do usuário, guardado só na pasta de dados do app.
+//! repositório no GitHub. Com o repositório público, a consulta não precisa de
+//! nada; enquanto ele for privado, o app usa um token pessoal do usuário,
+//! guardado só na pasta de dados do app.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -129,13 +130,19 @@ fn agent(timeout: u64) -> ureq::Agent {
         .into()
 }
 
-fn explain(e: ureq::Error) -> String {
+fn explain(e: ureq::Error, with_token: bool) -> String {
     match e {
         ureq::Error::StatusCode(401) => {
             "O token foi recusado pelo GitHub (inválido ou expirado)".into()
         }
+        ureq::Error::StatusCode(403 | 429) if !with_token => {
+            "O GitHub limitou as consultas por agora; tente de novo daqui a uma hora".into()
+        }
         ureq::Error::StatusCode(403) => {
             "O token não tem permissão de leitura no repositório".into()
+        }
+        ureq::Error::StatusCode(404) if !with_token => {
+            "Não encontrei versões publicadas. Se o repositório for privado, use um token".into()
         }
         ureq::Error::StatusCode(404) => {
             "Nenhuma versão publicada ainda, ou o token não dá acesso ao repositório".into()
@@ -144,18 +151,22 @@ fn explain(e: ureq::Error) -> String {
     }
 }
 
+/// Pedido à API do GitHub, com o token só se houver um.
+fn request(url: String, token: &str, timeout: u64) -> ureq::RequestBuilder<ureq::typestate::WithoutBody> {
+    let request = agent(timeout).get(url).header("X-GitHub-Api-Version", "2022-11-28");
+    if token.is_empty() {
+        request
+    } else {
+        request.header("Authorization", format!("Bearer {token}"))
+    }
+}
+
 /// Consulta a última release publicada.
 pub fn check(token: &str, current: &str) -> Result<UpdateInfo, String> {
-    if token.is_empty() {
-        return Err("Configure o token do GitHub para verificar atualizações".into());
-    }
-    let body = agent(20)
-        .get(format!("{API}/repos/{REPO}/releases/latest"))
-        .header("Authorization", format!("Bearer {token}"))
+    let body = request(format!("{API}/repos/{REPO}/releases/latest"), token, 20)
         .header("Accept", "application/vnd.github+json")
-        .header("X-GitHub-Api-Version", "2022-11-28")
         .call()
-        .map_err(explain)?
+        .map_err(|e| explain(e, !token.is_empty()))?
         .body_mut()
         .read_to_string()
         .map_err(|e| e.to_string())?;
@@ -173,13 +184,14 @@ pub fn download(token: &str, asset: &Asset, dir: &Path) -> Result<PathBuf, Strin
         .to_owned();
     fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     let path = dir.join(name);
-    let mut response = agent(600)
-        .get(format!("{API}/repos/{REPO}/releases/assets/{}", asset.id))
-        .header("Authorization", format!("Bearer {token}"))
-        .header("Accept", "application/octet-stream")
-        .header("X-GitHub-Api-Version", "2022-11-28")
-        .call()
-        .map_err(explain)?;
+    let mut response = request(
+        format!("{API}/repos/{REPO}/releases/assets/{}", asset.id),
+        token,
+        600,
+    )
+    .header("Accept", "application/octet-stream")
+    .call()
+    .map_err(|e| explain(e, !token.is_empty()))?;
     let data = response
         .body_mut()
         .with_config()
@@ -247,7 +259,9 @@ mod tests {
     }
 
     #[test]
-    fn refuses_to_check_without_token() {
-        assert!(check("", "0.1.0").unwrap_err().contains("token"));
+    fn explains_errors_with_and_without_token() {
+        assert!(explain(ureq::Error::StatusCode(404), false).contains("privado"));
+        assert!(explain(ureq::Error::StatusCode(404), true).contains("token"));
+        assert!(explain(ureq::Error::StatusCode(403), false).contains("limitou"));
     }
 }

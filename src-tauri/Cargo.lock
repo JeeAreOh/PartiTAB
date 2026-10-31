@@ -2757,7 +2757,7 @@ dependencies = [
 
 [[package]]
 name = "partitab"
-version = "0.3.5"
+version = "0.4.0"
 dependencies = [
  "cpal",
  "midir",
