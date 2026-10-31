@@ -1,7 +1,6 @@
 //! Verificador de versão. As versões são publicadas como releases do
-//! repositório no GitHub. Com o repositório público, a consulta não precisa de
-//! nada; enquanto ele for privado, o app usa um token pessoal do usuário,
-//! guardado só na pasta de dados do app.
+//! repositório público no GitHub; a consulta e o download não precisam de
+//! autenticação.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -11,30 +10,13 @@ use serde::{Deserialize, Serialize};
 
 pub const REPO: &str = "JeeAreOh/PartiTAB";
 const API: &str = "https://api.github.com";
-const SETTINGS_FILE: &str = "atualizacao.json";
+/// Onde versões antigas guardavam o token do GitHub.
+const OLD_SETTINGS_FILE: &str = "atualizacao.json";
 
-#[derive(Debug, Default, Serialize, Deserialize)]
-struct Settings {
-    #[serde(default)]
-    token: String,
-}
-
-/// Lê o token salvo (vazio = não configurado).
-pub fn load_token(dir: &Path) -> String {
-    fs::read_to_string(dir.join(SETTINGS_FILE))
-        .ok()
-        .and_then(|s| serde_json::from_str::<Settings>(&s).ok())
-        .map(|s| s.token)
-        .unwrap_or_default()
-}
-
-pub fn save_token(dir: &Path, token: &str) -> Result<(), String> {
-    fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    let json = serde_json::to_string(&Settings {
-        token: token.trim().to_string(),
-    })
-    .map_err(|e| e.to_string())?;
-    fs::write(dir.join(SETTINGS_FILE), json).map_err(|e| e.to_string())
+/// Apaga o token que versões antigas (repositório privado) guardavam: ele não
+/// é mais usado, e é uma credencial.
+pub fn forget_token(dir: &Path) {
+    let _ = fs::remove_file(dir.join(OLD_SETTINGS_FILE));
 }
 
 /// Versão como (maior, menor, correção); ignora "v" e sufixos ("-beta").
@@ -130,43 +112,28 @@ fn agent(timeout: u64) -> ureq::Agent {
         .into()
 }
 
-fn explain(e: ureq::Error, with_token: bool) -> String {
+fn explain(e: ureq::Error) -> String {
     match e {
-        ureq::Error::StatusCode(401) => {
-            "O token foi recusado pelo GitHub (inválido ou expirado)".into()
-        }
-        ureq::Error::StatusCode(403 | 429) if !with_token => {
+        ureq::Error::StatusCode(403 | 429) => {
             "O GitHub limitou as consultas por agora; tente de novo daqui a uma hora".into()
         }
-        ureq::Error::StatusCode(403) => {
-            "O token não tem permissão de leitura no repositório".into()
-        }
-        ureq::Error::StatusCode(404) if !with_token => {
-            "Não encontrei versões publicadas. Se o repositório for privado, use um token".into()
-        }
-        ureq::Error::StatusCode(404) => {
-            "Nenhuma versão publicada ainda, ou o token não dá acesso ao repositório".into()
-        }
+        ureq::Error::StatusCode(404) => "Não encontrei versões publicadas".into(),
         e => format!("Não foi possível falar com o GitHub: {e}"),
     }
 }
 
-/// Pedido à API do GitHub, com o token só se houver um.
-fn request(url: String, token: &str, timeout: u64) -> ureq::RequestBuilder<ureq::typestate::WithoutBody> {
-    let request = agent(timeout).get(url).header("X-GitHub-Api-Version", "2022-11-28");
-    if token.is_empty() {
-        request
-    } else {
-        request.header("Authorization", format!("Bearer {token}"))
-    }
+fn request(url: String, timeout: u64) -> ureq::RequestBuilder<ureq::typestate::WithoutBody> {
+    agent(timeout)
+        .get(url)
+        .header("X-GitHub-Api-Version", "2022-11-28")
 }
 
 /// Consulta a última release publicada.
-pub fn check(token: &str, current: &str) -> Result<UpdateInfo, String> {
-    let body = request(format!("{API}/repos/{REPO}/releases/latest"), token, 20)
+pub fn check(current: &str) -> Result<UpdateInfo, String> {
+    let body = request(format!("{API}/repos/{REPO}/releases/latest"), 20)
         .header("Accept", "application/vnd.github+json")
         .call()
-        .map_err(|e| explain(e, !token.is_empty()))?
+        .map_err(explain)?
         .body_mut()
         .read_to_string()
         .map_err(|e| e.to_string())?;
@@ -174,9 +141,7 @@ pub fn check(token: &str, current: &str) -> Result<UpdateInfo, String> {
 }
 
 /// Baixa o instalador para a pasta temporária e devolve o caminho.
-/// O GitHub redireciona para outro servidor; o ureq não repassa o token nesse
-/// redirecionamento (que seria recusado).
-pub fn download(token: &str, asset: &Asset, dir: &Path) -> Result<PathBuf, String> {
+pub fn download(asset: &Asset, dir: &Path) -> Result<PathBuf, String> {
     // Só o nome do arquivo (o nome vem da release, mas não deve escapar da pasta).
     let name = Path::new(&asset.name)
         .file_name()
@@ -184,14 +149,10 @@ pub fn download(token: &str, asset: &Asset, dir: &Path) -> Result<PathBuf, Strin
         .to_owned();
     fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     let path = dir.join(name);
-    let mut response = request(
-        format!("{API}/repos/{REPO}/releases/assets/{}", asset.id),
-        token,
-        600,
-    )
-    .header("Accept", "application/octet-stream")
-    .call()
-    .map_err(|e| explain(e, !token.is_empty()))?;
+    let mut response = request(format!("{API}/repos/{REPO}/releases/assets/{}", asset.id), 600)
+        .header("Accept", "application/octet-stream")
+        .call()
+        .map_err(explain)?;
     let data = response
         .body_mut()
         .with_config()
@@ -249,19 +210,17 @@ mod tests {
     }
 
     #[test]
-    fn token_is_saved_in_the_data_folder() {
+    fn forgets_the_old_token_file() {
         let dir = tempfile::tempdir().unwrap();
-        assert_eq!(load_token(dir.path()), "");
-        save_token(dir.path(), "  github_pat_abc \n").unwrap();
-        assert_eq!(load_token(dir.path()), "github_pat_abc");
-        save_token(dir.path(), "").unwrap();
-        assert_eq!(load_token(dir.path()), "");
+        fs::write(dir.path().join(OLD_SETTINGS_FILE), r#"{"token":"github_pat_abc"}"#).unwrap();
+        forget_token(dir.path());
+        assert!(!dir.path().join(OLD_SETTINGS_FILE).exists());
+        forget_token(dir.path()); // sem arquivo, não falha
     }
 
     #[test]
-    fn explains_errors_with_and_without_token() {
-        assert!(explain(ureq::Error::StatusCode(404), false).contains("privado"));
-        assert!(explain(ureq::Error::StatusCode(404), true).contains("token"));
-        assert!(explain(ureq::Error::StatusCode(403), false).contains("limitou"));
+    fn explains_errors() {
+        assert!(explain(ureq::Error::StatusCode(404)).contains("versões"));
+        assert!(explain(ureq::Error::StatusCode(403)).contains("limitou"));
     }
 }

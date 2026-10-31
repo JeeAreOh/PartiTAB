@@ -863,7 +863,7 @@ export const HELP_TOPICS: HelpTopic[] = [
     id: "atualizacoes",
     group: "Ajustes",
     title: "Atualizações",
-    keywords: "atualizar versão nova token github instalar",
+    keywords: "atualizar versão nova github instalar",
     body: (
       <>
         <p>
@@ -872,12 +872,6 @@ export const HELP_TOPICS: HelpTopic[] = [
           app e abre o instalador. A biblioteca e os ajustes são mantidos. <b>Verificar agora</b>{" "}
           consulta de novo; <b>Ver todas as versões no GitHub</b> abre a página de versões no
           navegador.
-        </p>
-        <p>
-          <b>Usar token (repositório privado)</b> só é preciso se o repositório do PartiTAB no
-          GitHub estiver privado: crie um <i>fine-grained personal access token</i> com acesso só a
-          ele e permissão <b>Contents: Read-only</b>, e cole no campo. O token fica salvo só neste
-          computador.
         </p>
       </>
     ),

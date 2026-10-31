@@ -21,7 +21,7 @@ export function useUpdates() {
     }
   }, []);
 
-  // Ao abrir: lê a versão e já verifica (o token só é preciso com o repositório privado).
+  // Ao abrir: lê a versão e já verifica.
   useEffect(() => {
     api.updates
       .status()
@@ -31,17 +31,6 @@ export function useUpdates() {
       })
       .catch(() => undefined);
   }, [check]);
-
-  const saveToken = useCallback(
-    async (token: string) => {
-      await api.updates.setToken(token);
-      const s = await api.updates.status();
-      setStatus(s);
-      setInfo(null);
-      await check();
-    },
-    [check],
-  );
 
   /** Baixa o instalador e abre; o app fecha sozinho em seguida. */
   const install = useCallback(async () => {
@@ -56,7 +45,7 @@ export function useUpdates() {
     }
   }, [info]);
 
-  return { status, info, error, checking, installing, check, saveToken, install };
+  return { status, info, error, checking, installing, check, install };
 }
 
 export type Updates = ReturnType<typeof useUpdates>;

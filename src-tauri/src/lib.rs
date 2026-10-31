@@ -361,7 +361,6 @@ fn library_attempts(lib: State<LibraryState>, song_id: i64) -> Result<Vec<Attemp
 #[serde(rename_all = "camelCase")]
 struct UpdateStatus {
     version: String,
-    configured: bool,
     repo: &'static str,
 }
 
@@ -373,21 +372,15 @@ fn data_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
 fn update_status(app: AppHandle) -> Result<UpdateStatus, String> {
     Ok(UpdateStatus {
         version: app.package_info().version.to_string(),
-        configured: !updates::load_token(&data_dir(&app)?).is_empty(),
         repo: updates::REPO,
     })
 }
 
 #[tauri::command]
-fn update_set_token(app: AppHandle, token: String) -> Result<(), String> {
-    updates::save_token(&data_dir(&app)?, &token)
-}
-
-#[tauri::command]
 async fn update_check(app: AppHandle) -> Result<updates::UpdateInfo, String> {
-    let token = updates::load_token(&data_dir(&app)?);
+    updates::forget_token(&data_dir(&app)?);
     let current = app.package_info().version.to_string();
-    tauri::async_runtime::spawn_blocking(move || updates::check(&token, &current))
+    tauri::async_runtime::spawn_blocking(move || updates::check(&current))
         .await
         .map_err(|e| e.to_string())?
 }
@@ -396,14 +389,13 @@ async fn update_check(app: AppHandle) -> Result<updates::UpdateInfo, String> {
 /// substitui os arquivos; a biblioteca e os ajustes ficam).
 #[tauri::command]
 async fn update_install(app: AppHandle, asset: updates::Asset) -> Result<(), String> {
-    let token = updates::load_token(&data_dir(&app)?);
     let dir = app
         .path()
         .temp_dir()
         .map_err(|e| e.to_string())?
         .join("PartiTAB-atualizacao");
     let installer =
-        tauri::async_runtime::spawn_blocking(move || updates::download(&token, &asset, &dir))
+        tauri::async_runtime::spawn_blocking(move || updates::download(&asset, &dir))
             .await
             .map_err(|e| e.to_string())??;
 
@@ -655,7 +647,6 @@ pub fn run() {
             library_import_collection,
             library_find_covers,
             update_status,
-            update_set_token,
             update_check,
             update_install,
             library_cover_from_url,

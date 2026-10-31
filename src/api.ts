@@ -143,7 +143,6 @@ export interface ErrorMap {
 
 export interface UpdateStatus {
   version: string;
-  configured: boolean;
   repo: string;
 }
 
@@ -187,7 +186,6 @@ export const api = {
     invoke<ArrayBuffer>("read_file", { path }).then((b) => new Uint8Array(b)),
   updates: {
     status: () => invoke<UpdateStatus>("update_status"),
-    setToken: (token: string) => invoke<void>("update_set_token", { token }),
     check: () => invoke<UpdateInfo>("update_check"),
     install: (asset: UpdateAsset) => invoke<void>("update_install", { asset }),
   },

@@ -2,6 +2,10 @@
 
 As versões e os instaladores ficam na [página de versões](https://github.com/JeeAreOh/PartiTAB/releases).
 
+## 0.4.1 — 31/10/2026
+
+- Sem token do GitHub: a opção saiu dos ajustes e o token salvo por versões antigas é apagado.
+
 ## 0.4.0 — 31/10/2026
 
 - As atualizações funcionam sem token do GitHub (o token passa a ser opcional, só para repositório privado).

@@ -89,7 +89,7 @@ Registre as mudanças no [CHANGELOG](../CHANGELOG.md) antes de publicar.
 
 ## Atualização dentro do app
 
-O app consulta `GET /repos/JeeAreOh/PartiTAB/releases/latest` na API do GitHub ao abrir e, havendo versão nova, baixa o instalador NSIS da release, abre e fecha o app. Com o repositório público, a consulta não precisa de autenticação (limite de 60 consultas por hora por IP). Se o repositório for privado, o usuário pode informar um token *fine-grained* com **Contents: Read-only**, salvo em `atualizacao.json` na pasta de dados do app.
+O app consulta `GET /repos/JeeAreOh/PartiTAB/releases/latest` na API do GitHub ao abrir e, havendo versão nova, baixa o instalador NSIS da release, abre e fecha o app. A consulta não usa autenticação (o limite do GitHub é de 60 consultas por hora por IP). Versões até a 0.4.0 aceitavam um token do GitHub, da época em que o repositório era privado; a partir da 0.4.1 o arquivo desse token (`atualizacao.json`) é apagado na primeira verificação.
 
 ## Ícone
 
