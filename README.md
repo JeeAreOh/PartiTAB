@@ -16,7 +16,7 @@ O plano completo está em [docs/PLANO.md](docs/PLANO.md).
 - **Timbre** na barra superior: lista os instrumentos do SoundFont por família (pianos, órgãos, cordas…), com busca, favoritos e volume. Trocar a voz no próprio teclado não muda o timbre do app.
 - Em **Ajustes → Som**: volume, reverb, sensibilidade ao toque (Leve, Normal, Pesada, Fixa) e um catálogo de SoundFonts gratuitos para baixar com um clique (GeneralUser GS, FluidR3 GM, TimGM6mb), conferidos por SHA-256 e guardados na pasta de dados do app.
 - O som vai do `midir` direto ao `rustysynth` e ao `cpal` (WASAPI), sem passar pela interface. O buffer pedido é de 256 frames (~5 ms a 48 kHz) quando o dispositivo permite.
-- Teclado virtual de 61 teclas (C2–C7) mostra o que está sendo tocado; também dá para tocar com o mouse.
+- Teclado virtual de 61 teclas (C1–C6, com os nomes de oitava da Yamaha: o dó central é C3, como no painel do PSR) mostra o que está sendo tocado; também dá para tocar com o mouse.
 
 **Fase 2 — leitor de partitura** ([alphaTab](https://alphatab.net/))
 

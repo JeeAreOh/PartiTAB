@@ -1,6 +1,7 @@
 import { useRef } from "react";
+import { octaveName } from "./octave";
 
-/** Faixa do PSR-E463: 61 teclas, C2 (36) a C7 (96). */
+/** Faixa do PSR-E463: 61 teclas, C1 (36) a C6 (96), na nomenclatura da Yamaha. */
 export const FIRST_KEY = 36;
 export const LAST_KEY = 96;
 
@@ -8,7 +9,7 @@ const BLACK = new Set([1, 3, 6, 8, 10]);
 const NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
 export const isBlack = (key: number) => BLACK.has(key % 12);
-export const noteName = (key: number) => `${NAMES[key % 12]}${Math.floor(key / 12) - 1}`;
+export const noteName = (key: number) => `${NAMES[key % 12]}${octaveName(key)}`;
 
 const WHITES: number[] = [];
 for (let k = FIRST_KEY; k <= LAST_KEY; k++) if (!isBlack(k)) WHITES.push(k);

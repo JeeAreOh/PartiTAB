@@ -40,9 +40,10 @@ describe("posição na pauta", () => {
   });
 
   it("nomes em português", () => {
-    expect(noteName({ clef: "treble", key: 60, accidental: null })).toBe("Dó4");
-    expect(noteName({ clef: "treble", key: 66, accidental: "sharp" })).toBe("Fá#4");
-    expect(noteName({ clef: "bass", key: 46, accidental: "flat" })).toBe("Si♭2");
+    // Oitavas como a Yamaha: dó central = Dó3.
+    expect(noteName({ clef: "treble", key: 60, accidental: null })).toBe("Dó3");
+    expect(noteName({ clef: "treble", key: 66, accidental: "sharp" })).toBe("Fá#3");
+    expect(noteName({ clef: "bass", key: 46, accidental: "flat" })).toBe("Si♭1");
   });
 });
 

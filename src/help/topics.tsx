@@ -93,6 +93,11 @@ export const HELP_TOPICS: HelpTopic[] = [
           a partitura está tocando (ou, no modo Esperar, as notas que faltam). Também dá para tocar
           nele com o mouse.
         </p>
+        <p>
+          Os nomes das oitavas seguem a Yamaha, como no painel do PSR: o dó central é <b>C3</b>{" "}
+          (Dó3), e o teclado vai de C1 a C6. Alguns livros e programas usam a nomenclatura
+          científica, em que o mesmo dó central se chama C4.
+        </p>
       </>
     ),
   },

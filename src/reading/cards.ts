@@ -4,6 +4,8 @@
  * menos; erradas voltam para a caixa 1.
  */
 
+import { octaveName } from "../octave";
+
 export type Clef = "treble" | "bass";
 export type Range = "staff" | "ledger";
 
@@ -72,10 +74,10 @@ export function staffStep(card: Card): number {
   return letterOctave * 7 + letter - BOTTOM_LINE[card.clef];
 }
 
-/** Nome em português, ex.: "Fá#4", "Si♭3", "Dó4". */
+/** Nome em português, com a oitava como a Yamaha: o dó central é "Dó3". */
 export function noteName(card: Card): string {
   const pc = card.key % 12;
-  const octave = Math.floor(card.key / 12) - 1;
+  const octave = octaveName(card.key);
   if (!BLACK.has(pc)) return `${NAMES[LETTER[pc]]}${octave}`;
   return card.accidental === "flat"
     ? `${NAMES[LETTER[pc + 1]]}♭${octave}`
