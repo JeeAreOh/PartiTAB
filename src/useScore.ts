@@ -194,9 +194,10 @@ export function useScore(onError: (message: string) => void) {
       rangeRef.current = r ? { startTick: r.startTick, endTick: r.endTick } : null;
       setState((s) => ({ ...s, range: rangeRef.current }));
     });
-    api.postRenderFinished.on(() =>
-      setState((s) => ({ ...s, renderVersion: s.renderVersion + 1 })),
-    );
+    api.postRenderFinished.on(() => {
+      fitSurface(container);
+      setState((s) => ({ ...s, renderVersion: s.renderVersion + 1 }));
+    });
     api.playerReady.on(() => {
       // O player pode ter sido recriado: reaplica o som pelo teclado.
       if (keyboardOutRef.current) applyKeyboardOut(api, true);
@@ -578,4 +579,19 @@ function timelineOf(api: alphaTab.AlphaTabApi, track: number | null) {
 function applyKeyboardOut(api: alphaTab.AlphaTabApi, on: boolean) {
   api.midiEventsPlayedFilter = on ? EVENT_FILTER : [];
   api.masterVolume = on ? 0 : 1;
+}
+
+/**
+ * No layout de uma linha com zoom, o alphaTab dá à área da partitura a largura
+ * sem zoom (multiplica só a altura) e corta o resto. Alarga a área até o fim
+ * do que foi desenhado.
+ */
+function fitSurface(container: HTMLElement) {
+  const surface = container.querySelector<HTMLElement>(".at-surface");
+  if (!surface) return;
+  let right = 0;
+  for (const child of Array.from(surface.children) as HTMLElement[]) {
+    right = Math.max(right, child.offsetLeft + child.offsetWidth);
+  }
+  if (right > surface.offsetWidth + 1) surface.style.width = `${Math.ceil(right)}px`;
 }
