@@ -139,7 +139,9 @@ export function useScore(onError: (message: string) => void) {
     if (!container || !scroll) return;
 
     const api = new alphaTab.AlphaTabApi(container, {
-      core: { fontDirectory: "/font/" },
+      // Sem desenho preguiçoso: no WebView2, com zoom alto, partes da partitura
+      // que já estavam na tela ficavam em branco.
+      core: { fontDirectory: "/font/", enableLazyLoading: false },
       display: { staveProfile: alphaTab.StaveProfile.Score },
       player: {
         playerMode: alphaTab.PlayerMode.EnabledSynthesizer,
