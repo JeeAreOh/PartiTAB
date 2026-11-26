@@ -18,6 +18,7 @@ import {
 import { NoteCard } from "./NoteCard";
 import { NoteTest } from "./NoteTest";
 import { SightReading } from "../sightreading/SightReading";
+import { RhythmPanel } from "../rhythm/RhythmPanel";
 import { useStudyTimer } from "../progress/studyTimer";
 
 const SESSION = 20;
@@ -57,6 +58,9 @@ interface Props {
   onStudySaved?: () => void;
   /** Gera e abre um trecho de primeira vista no nível escolhido. */
   onStartSight?: (level: number) => void;
+  /** Gera e abre uma linha de ritmo. */
+  onStartRhythm?: (level: number) => void;
+  planRhythmLevel?: number | null;
   /** Muda quando há prática nova (os painéis recarregam o histórico). */
   version?: number;
   busy?: boolean;
@@ -70,8 +74,8 @@ interface Result {
   ms: number;
 }
 
-type Mode = "training" | "test" | "sight";
-const MODES: Mode[] = ["training", "test", "sight"];
+type Mode = "training" | "test" | "sight" | "rhythm";
+const MODES: Mode[] = ["training", "test", "sight", "rhythm"];
 const MODE_KEY = "partitab.readingMode";
 
 /** Aba Leitura: treino com repetição espaçada e o teste das 20 notas. */
@@ -80,6 +84,8 @@ export function ReadingTrainer({
   onError,
   onStudySaved,
   onStartSight,
+  onStartRhythm,
+  planRhythmLevel,
   version,
   busy = false,
   planSightLevel,
@@ -124,6 +130,7 @@ export function ReadingTrainer({
             ["training", "Treino de notas"],
             ["test", "Teste das 20 notas"],
             ["sight", "Primeira vista"],
+            ["rhythm", "Ritmo"],
           ] as const
         ).map(([v, label]) => (
           <button
@@ -137,7 +144,7 @@ export function ReadingTrainer({
           </button>
         ))}
       </div>
-      {mode !== "sight" && (
+      {mode !== "sight" && mode !== "rhythm" && (
         <div className="reading-options">
           <div className="segmented" role="group" aria-label="Clave">
             {(
@@ -192,7 +199,14 @@ export function ReadingTrainer({
           </label>
         </div>
       )}
-      {mode === "sight" ? (
+      {mode === "rhythm" ? (
+        <RhythmPanel
+          version={version}
+          busy={busy}
+          planLevel={planRhythmLevel}
+          onStart={(level) => onStartRhythm?.(level)}
+        />
+      ) : mode === "sight" ? (
         <SightReading
           version={version}
           busy={busy}

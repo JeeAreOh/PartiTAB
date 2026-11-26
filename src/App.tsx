@@ -1,7 +1,9 @@
 import { getOctaveNaming } from "./octave";
 import { inLibrary } from "./library/filter";
-import { generate, sightXml, SIGHT_COMPOSER, type SightPiece } from "./sightreading/generate";
+import { generate, sightXml, SIGHT_COMPOSER } from "./sightreading/generate";
 import { judgeRun, suggestLevel } from "./sightreading/progress";
+import { generateRhythm, rhythmXml, RHYTHM_STYLE } from "./rhythm/generate";
+import { saveRhythmResult, timingSummary } from "./rhythm/summary";
 import { TrainingBanner, type Training } from "./sightreading/TrainingBanner";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { open, save } from "@tauri-apps/plugin-dialog";
@@ -158,6 +160,7 @@ function App() {
   const [showHelp, setShowHelp] = useState(false);
   // Trecho de treino em andamento (primeira vista): estudo, execução única e resultado.
   const [training, setTraining] = useState<Training | null>(null);
+  const trainingKind = training?.kind ?? null;
   // Muda ao trocar a convenção das oitavas, para redesenhar os nomes das notas.
   const [, setOctaveNaming] = useState(getOctaveNaming);
   // F1 abre a ajuda de qualquer tela.
@@ -229,6 +232,7 @@ function App() {
     loop: score.state.loop,
     onSpeed: changeSpeed,
     onMastered: () => onMasteredRef.current(),
+    anyKey: trainingKind === "rhythm",
   });
   const { state } = score;
   const p = practice.state;
@@ -563,22 +567,35 @@ function App() {
     for (const s of old) library.remove(s.id);
   };
 
-  /** Gera um trecho de primeira vista e abre em execução única, depois de 30 s de estudo. */
-  const startSight = (level: number, seed?: number, counts = true) =>
+  /**
+   * Gera um trecho de treino (primeira vista ou ritmo) e abre em execução
+   * única em Tocar junto, depois do tempo de estudo.
+   */
+  const startTraining = (kind: Training["kind"], level: number, seed?: number, counts = true) =>
     run(async () => {
       practice.stop();
-      const piece: SightPiece = generate(level, seed ?? Date.now() % 2147483647);
-      const data = new TextEncoder().encode(sightXml(piece));
-      let song = await library.importBytes(
-        `${piece.title}.musicxml`,
-        data,
-        piece.title,
-        SIGHT_COMPOSER,
-      );
-      if (song.style !== SIGHT_COMPOSER) {
-        song = (await library.update(song.id, { style: SIGHT_COMPOSER })) ?? song;
+      const s = seed ?? Date.now() % 2147483647;
+      const made =
+        kind === "sight"
+          ? (() => {
+              const piece = generate(level, s);
+              return { ...piece, xml: sightXml(piece), style: SIGHT_COMPOSER };
+            })()
+          : (() => {
+              const line = generateRhythm(level, s);
+              return {
+                ...line,
+                hands: "right" as const,
+                xml: rhythmXml(line),
+                style: RHYTHM_STYLE,
+              };
+            })();
+      const data = new TextEncoder().encode(made.xml);
+      let song = await library.importBytes(`${made.title}.musicxml`, data, made.title, made.style);
+      if (song.style !== made.style) {
+        song = (await library.update(song.id, { style: made.style })) ?? song;
       }
-      pruneTraining(SIGHT_COMPOSER, song.id);
+      pruneTraining(made.style, song.id);
       const restore = training?.restore ?? {
         mode: p.mode,
         hands: p.hands,
@@ -591,15 +608,15 @@ function App() {
       score.setLoop(false);
       changeSpeed(100);
       practice.set("mode", "play");
-      practice.set("hands", piece.hands);
+      practice.set("hands", made.hands);
       practice.set("ramp", false);
       practice.set("metronome", true);
       practice.set("countIn", true);
       setTraining({
-        kind: "sight",
-        level: piece.level,
-        seed: piece.seed,
-        title: piece.title,
+        kind,
+        level: made.level,
+        seed: made.seed,
+        title: made.title,
         songId: song.id,
         counts,
         phase: "study",
@@ -607,6 +624,8 @@ function App() {
         restore,
       });
     });
+  const startSight = (level: number, seed?: number, counts = true) =>
+    startTraining("sight", level, seed, counts);
 
   /** Fim do estudo: grava o tempo de estudo e começa a execução. */
   const beginTraining = () => {
@@ -614,7 +633,11 @@ function App() {
     const studied = Date.now() - training.startedAt;
     if (studied >= 1000) {
       api.study
-        .save({ kind: "sight_reading", startedAt: training.startedAt, durationMs: studied })
+        .save({
+          kind: training.kind === "sight" ? "sight_reading" : "rhythm",
+          startedAt: training.startedAt,
+          durationMs: studied,
+        })
         .catch(() => undefined);
     }
     setTraining({ ...training, phase: "play" });
@@ -830,7 +853,27 @@ function App() {
         loadErrors(songId);
         setPracticeVersion((v) => v + 1);
       });
-    if (training?.phase === "play" && training.songId === songId) {
+    if (training?.phase === "play" && training.songId === songId && training.kind === "rhythm") {
+      const summary = timingSummary(p0.timings);
+      saveRhythmResult({
+        takenAt: Date.now(),
+        level: training.level,
+        deviationMs: summary.deviationMs,
+        accuracy: accuracy(t),
+      });
+      setTraining({
+        ...training,
+        phase: "result",
+        result: {
+          accuracy: accuracy(t),
+          passed: p0.finished,
+          lostBars: [],
+          suggestion: null,
+          deviationMs: summary.deviationMs,
+          worstBars: summary.worstBars,
+        },
+      });
+    } else if (training?.phase === "play" && training.songId === songId) {
       const judged = judgeRun(accuracy(t), p0.finished, p0.stats.bars);
       const result = { accuracy: accuracy(t), ...judged, suggestion: null as "up" | "down" | null };
       setTraining({ ...training, phase: "result", result });
@@ -1641,8 +1684,8 @@ function App() {
               training={training}
               busy={busy}
               onBegin={beginTraining}
-              onNext={(level) => startSight(level)}
-              onRepeat={() => startSight(training.level, training.seed, false)}
+              onNext={(level) => startTraining(training.kind, level)}
+              onRepeat={() => startTraining(training.kind, training.level, training.seed, false)}
               onLeave={leaveTraining}
             />
           )}
@@ -1809,6 +1852,7 @@ function App() {
               onError={setError}
               onStudySaved={() => setPracticeVersion((v) => v + 1)}
               onStartSight={(level) => startSight(level)}
+              onStartRhythm={(level) => startTraining("rhythm", level)}
               version={practiceVersion}
               busy={busy}
             />

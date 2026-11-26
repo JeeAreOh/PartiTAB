@@ -4,8 +4,8 @@ import type { Mode } from "../practice/usePractice";
 import { Icon } from "../ui/Icon";
 import { PASS_ACCURACY } from "./progress";
 
-/** Tempo de estudo antes da execução (s). */
-export const STUDY_SECONDS = 30;
+/** Tempo de estudo antes da execução (s): 30 na primeira vista, 10 no ritmo. */
+export const STUDY_SECONDS = { sight: 30, rhythm: 10 } as const;
 
 export interface Training {
   kind: "sight" | "rhythm";
@@ -46,20 +46,21 @@ const bars = (list: number[]) =>
 
 /** Faixa acima da partitura durante um trecho de treino. */
 export function TrainingBanner({ training, busy, onBegin, onNext, onRepeat, onLeave }: Props) {
-  const [left, setLeft] = useState(STUDY_SECONDS);
+  const study = STUDY_SECONDS[training.kind];
+  const [left, setLeft] = useState<number>(study);
   const isSight = training.kind === "sight";
 
   useEffect(() => {
     if (training.phase !== "study") return;
     const tick = () => {
-      const remaining = Math.max(0, STUDY_SECONDS - (Date.now() - training.startedAt) / 1000);
+      const remaining = Math.max(0, study - (Date.now() - training.startedAt) / 1000);
       setLeft(Math.ceil(remaining));
       if (remaining <= 0) onBegin();
     };
     tick();
     const id = window.setInterval(tick, 250);
     return () => window.clearInterval(id);
-  }, [training.phase, training.startedAt, onBegin]);
+  }, [training.phase, training.startedAt, study, onBegin]);
 
   const r = training.result;
   const label = isSight ? "Primeira vista" : "Ritmo";
@@ -84,7 +85,8 @@ export function TrainingBanner({ training, busy, onBegin, onNext, onRepeat, onLe
               </>
             ) : (
               <>
-                Qualquer tecla vale: só o tempo conta. Começa em <b className="count">{left} s</b>.
+                Leia o ritmo. Qualquer tecla vale: só o tempo conta. Começa em{" "}
+                <b className="count">{left} s</b>.
               </>
             )}
           </span>

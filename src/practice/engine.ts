@@ -219,6 +219,7 @@ export class PlayAlongJudge {
    * @param notes notas da faixa (todas as mãos; o filtro é feito aqui)
    * @param toMs converte pulsos em ms de música
    * @param speed andamento (1 = 100%); ms de música / speed = ms reais
+   * @param anyKey treino de ritmo: qualquer tecla vale, só o tempo é avaliado
    */
   constructor(
     notes: TimelineNote[],
@@ -227,6 +228,7 @@ export class PlayAlongJudge {
     private readonly speed: number,
     startMs = 0,
     range: Range | null = null,
+    private readonly anyKey = false,
   ) {
     this.pending = notes
       .filter((n) => plays(hands, n.hand) && inRange(n.tick, range))
@@ -256,7 +258,7 @@ export class PlayAlongJudge {
     for (let i = this.cursor; i < this.pending.length; i++) {
       const p = this.pending[i];
       if (p.ms > songMs + window) break;
-      if (p.done || p.note.key !== key || p.ms < songMs - window) continue;
+      if (p.done || (!this.anyKey && p.note.key !== key) || p.ms < songMs - window) continue;
       if (!best || Math.abs(p.ms - songMs) < Math.abs(best.ms - songMs)) best = p;
     }
     if (!best) {

@@ -194,6 +194,15 @@ describe("PlayAlongJudge", () => {
     expect(j.press(60, 50)).toEqual({ verdict: "late", key: 60, deltaMs: 100, bar: 0 });
   });
 
+  it("no treino de ritmo, qualquer tecla no tempo vale", () => {
+    const j = new PlayAlongJudge(notes, "right", toMs, 1, 0, null, true);
+    expect(j.press(71, 10)).toEqual({ verdict: "hit", key: 71, deltaMs: 10, bar: 0 });
+    expect(j.press(40, 380)).toEqual({ verdict: "early", key: 40, deltaMs: -120, bar: 0 });
+    expect(j.press(99, 1150)).toEqual({ verdict: "late", key: 99, deltaMs: 150, bar: 1 });
+    // Sem nota pendente perto: continua sendo erro.
+    expect(j.press(71, 1700).verdict).toBe("wrong");
+  });
+
   it("começa a contar a partir da posição de início", () => {
     expect(new PlayAlongJudge(notes, "right", toMs, 1, 500).total).toBe(2);
   });

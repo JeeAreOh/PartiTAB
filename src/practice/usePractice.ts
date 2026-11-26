@@ -43,6 +43,8 @@ interface Options {
   onMastered?: () => void;
   /** Atraso calibrado (ms reais) entre o som e o toque do aluno. */
   latencyMs?: number;
+  /** Treino de ritmo: qualquer tecla vale no Tocar junto. */
+  anyKey?: boolean;
 }
 
 export interface PracticeState {
@@ -56,6 +58,8 @@ export interface PracticeState {
   tally: Tally;
   /** Onde se errou nesta sessão (vai para o mapa de erros). */
   stats: Stats;
+  /** Desvio (ms reais) de cada nota tocada no Tocar junto, por compasso. */
+  timings: { bar: number; deltaMs: number }[];
   /** Voltas completas no trecho e erros na volta atual. */
   passes: number;
   passErrors: number;
@@ -78,6 +82,7 @@ const INITIAL: PracticeState = {
   running: false,
   tally: emptyTally(),
   stats: emptyStats(),
+  timings: [],
   passes: 0,
   passErrors: 0,
   passMessage: null,
@@ -145,14 +150,18 @@ export function usePractice(options: Options) {
     setState((s) => {
       let tally = { ...s.tally, expected: s.tally.expected + expectedDelta };
       let stats = s.stats;
+      const timings = [...s.timings];
       for (const j of judgements) {
         tally = count(tally, j.verdict);
         stats = addToStats(stats, j);
+        if (j.deltaMs !== undefined && j.bar !== undefined)
+          timings.push({ bar: j.bar, deltaMs: j.deltaMs });
       }
       return {
         ...s,
         tally,
         stats,
+        timings,
         passErrors: s.passErrors + errors,
         last: judgements[judgements.length - 1] ?? s.last,
       };
@@ -255,6 +264,7 @@ export function usePractice(options: Options) {
         speed,
         tempo.ms(fromTick),
         loop ? range : null,
+        latest.current.anyKey ?? false,
       );
     },
     [tempo, timeline],
@@ -322,6 +332,7 @@ export function usePractice(options: Options) {
       finished: false,
       tally: emptyTally(),
       stats: emptyStats(),
+      timings: [],
       passes: 0,
       passErrors: 0,
       passMessage: null,

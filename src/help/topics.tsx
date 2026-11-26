@@ -803,6 +803,39 @@ export const HELP_TOPICS: HelpTopic[] = [
     ),
   },
   {
+    id: "ritmo",
+    group: "Estudo",
+    title: "Treino de ritmo",
+    keywords: "ritmo tempo metrônomo pulsação desvio ms síncope tercina contagem qualquer tecla",
+    body: (
+      <>
+        <p>
+          Em <b>Leitura → Ritmo</b>, o app escreve uma linha de 4 compassos com todas as notas no
+          Si da clave de sol: só o ritmo importa. As figuras seguem os mesmos 7 níveis da primeira
+          vista (síncope e tercina só no nível 7).
+        </p>
+        <ul>
+          <li>
+            <b>Nova linha</b> abre a partitura com 10 s para ler; depois começa em Tocar junto, com
+            1 compasso de contagem e o metrônomo ligado.
+          </li>
+          <li>
+            <b>Qualquer tecla vale.</b> Cada toque é comparado com a nota mais próxima no tempo:
+            no tempo, adiantado ou atrasado.
+          </li>
+          <li>
+            No fim aparece o <b>desvio médio</b> em milissegundos e os compassos mais imprecisos.
+            O painel mostra a média das últimas 10 linhas.
+          </li>
+        </ul>
+        <p>
+          As linhas, como os trechos de primeira vista, ficam fora da Biblioteca (só as 30 mais
+          recentes são guardadas), e o tempo conta no Progresso.
+        </p>
+      </>
+    ),
+  },
+  {
     id: "progresso",
     group: "Estudo",
     title: "Progresso",

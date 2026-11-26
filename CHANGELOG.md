@@ -2,6 +2,10 @@
 
 As versões e os instaladores ficam na [página de versões](https://github.com/JeeAreOh/PartiTAB/releases).
 
+## 0.6.1 — 26/11/2026
+
+- **Treino de ritmo** na aba Leitura: linhas de 4 compassos em que qualquer tecla vale e só o tempo conta, com o desvio médio em milissegundos e os compassos mais imprecisos.
+
 ## 0.6.0 — 26/11/2026
 
 - **Primeira vista** na aba Leitura: trechos novos a cada vez, em 7 níveis, com 30 s de estudo, execução única e aprovação com 85% de precisão.
