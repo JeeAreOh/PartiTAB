@@ -1,4 +1,8 @@
 import { getOctaveNaming } from "./octave";
+import { inLibrary } from "./library/filter";
+import { generate, sightXml, SIGHT_COMPOSER, type SightPiece } from "./sightreading/generate";
+import { judgeRun, suggestLevel } from "./sightreading/progress";
+import { TrainingBanner, type Training } from "./sightreading/TrainingBanner";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { api, type Song, type Status } from "./api";
@@ -74,7 +78,19 @@ function readViewPrefs(): ViewPrefs {
 /** Coleções já trazidas para a biblioteca na primeira abertura. */
 const COLLECTIONS_DONE = "partitab.collections";
 const MOUSE_VELOCITY = 90;
-const SCORE_EXTENSIONS = ["gp", "gp3", "gp4", "gp5", "gpx", "musicxml", "mxl", "xml", "cap", "mid", "midi"];
+const SCORE_EXTENSIONS = [
+  "gp",
+  "gp3",
+  "gp4",
+  "gp5",
+  "gpx",
+  "musicxml",
+  "mxl",
+  "xml",
+  "cap",
+  "mid",
+  "midi",
+];
 
 const storage = {
   get: (k: string) => {
@@ -140,6 +156,8 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  // Trecho de treino em andamento (primeira vista): estudo, execução única e resultado.
+  const [training, setTraining] = useState<Training | null>(null);
   // Muda ao trocar a convenção das oitavas, para redesenhar os nomes das notas.
   const [, setOctaveNaming] = useState(getOctaveNaming);
   // F1 abre a ajuda de qualquer tela.
@@ -153,9 +171,9 @@ function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
   const [currentId, setCurrentId] = useState<number | null>(null);
-  const [view, setView] = useState<"library" | "score" | "reading" | "technique" | "progress" | "search">(
-    "score",
-  );
+  const [view, setView] = useState<
+    "library" | "score" | "reading" | "technique" | "progress" | "search"
+  >("score");
   /** Muda a cada prática gravada (o painel de progresso recarrega). */
   const [practiceVersion, setPracticeVersion] = useState(0);
   /** Erros por compasso nas últimas execuções da música aberta. */
@@ -181,6 +199,8 @@ function App() {
   const theme = useTheme();
   const sound = useSound({ status, setStatus, onError: setError });
   const currentSong = library.songs.find((s) => s.id === currentId) ?? null;
+  // Trechos de treino gerados pelo app ficam fora da grade da Biblioteca.
+  const librarySongs = useMemo(() => library.songs.filter(inLibrary), [library.songs]);
   const changeSpeed = (value: number) => {
     setSpeed(value);
     score.setSpeed(value / 100);
@@ -519,7 +539,10 @@ function App() {
       const data = new TextEncoder().encode(exerciseXml(ex));
       let song = await library.importBytes(`${title}.musicxml`, data, title, TECHNIQUE_ARTIST);
       const prefs = parsePrefs(song);
-      if (song.style !== TECHNIQUE_ARTIST || JSON.stringify(prefs.exercise) !== JSON.stringify(ex)) {
+      if (
+        song.style !== TECHNIQUE_ARTIST ||
+        JSON.stringify(prefs.exercise) !== JSON.stringify(ex)
+      ) {
         song =
           (await library.update(song.id, {
             style: TECHNIQUE_ARTIST,
@@ -528,6 +551,94 @@ function App() {
       }
       await openSong(song);
     });
+
+  // ------------------------------------------------- primeira vista
+
+  /** Mantém só os últimos trechos gerados de um estilo de treino. */
+  const pruneTraining = (style: string, keep: number, max = 30) => {
+    const old = library.songs
+      .filter((s) => s.style === style && s.id !== keep)
+      .sort((a, b) => b.addedAt - a.addedAt)
+      .slice(max - 1);
+    for (const s of old) library.remove(s.id);
+  };
+
+  /** Gera um trecho de primeira vista e abre em execução única, depois de 30 s de estudo. */
+  const startSight = (level: number, seed?: number, counts = true) =>
+    run(async () => {
+      practice.stop();
+      const piece: SightPiece = generate(level, seed ?? Date.now() % 2147483647);
+      const data = new TextEncoder().encode(sightXml(piece));
+      let song = await library.importBytes(
+        `${piece.title}.musicxml`,
+        data,
+        piece.title,
+        SIGHT_COMPOSER,
+      );
+      if (song.style !== SIGHT_COMPOSER) {
+        song = (await library.update(song.id, { style: SIGHT_COMPOSER })) ?? song;
+      }
+      pruneTraining(SIGHT_COMPOSER, song.id);
+      const restore = training?.restore ?? {
+        mode: p.mode,
+        hands: p.hands,
+        ramp: p.ramp,
+        metronome: p.metronome,
+        countIn: p.countIn,
+      };
+      await openSong(song);
+      score.setRange(null);
+      score.setLoop(false);
+      changeSpeed(100);
+      practice.set("mode", "play");
+      practice.set("hands", piece.hands);
+      practice.set("ramp", false);
+      practice.set("metronome", true);
+      practice.set("countIn", true);
+      setTraining({
+        kind: "sight",
+        level: piece.level,
+        seed: piece.seed,
+        title: piece.title,
+        songId: song.id,
+        counts,
+        phase: "study",
+        startedAt: Date.now(),
+        restore,
+      });
+    });
+
+  /** Fim do estudo: grava o tempo de estudo e começa a execução. */
+  const beginTraining = () => {
+    if (!training || training.phase !== "study") return;
+    const studied = Date.now() - training.startedAt;
+    if (studied >= 1000) {
+      api.study
+        .save({ kind: "sight_reading", startedAt: training.startedAt, durationMs: studied })
+        .catch(() => undefined);
+    }
+    setTraining({ ...training, phase: "play" });
+    window.setTimeout(() => practice.start(), 200);
+  };
+
+  /** Sai do treino e volta às escolhas de prática de antes. */
+  const leaveTraining = useCallback(() => {
+    setTraining((t) => {
+      if (t) {
+        practice.set("mode", t.restore.mode);
+        practice.set("hands", t.restore.hands);
+        practice.set("ramp", t.restore.ramp);
+        practice.set("metronome", t.restore.metronome);
+        practice.set("countIn", t.restore.countIn);
+      }
+      return null;
+    });
+  }, [practice.set]);
+
+  // Abrir outra música encerra o treino.
+  useEffect(() => {
+    if (training && currentId !== training.songId) leaveTraining();
+  }, [currentId, training, leaveTraining]);
 
   // ------------------------------------------------------------- arranjo
 
@@ -719,6 +830,32 @@ function App() {
         loadErrors(songId);
         setPracticeVersion((v) => v + 1);
       });
+    if (training?.phase === "play" && training.songId === songId) {
+      const judged = judgeRun(accuracy(t), p0.finished, p0.stats.bars);
+      const result = { accuracy: accuracy(t), ...judged, suggestion: null as "up" | "down" | null };
+      setTraining({ ...training, phase: "result", result });
+      if (training.counts) {
+        api.sight
+          .save({
+            takenAt: Date.now(),
+            level: training.level,
+            seed: training.seed,
+            songId,
+            accuracy: result.accuracy,
+            passed: result.passed,
+          })
+          .then(() => api.sight.list(0))
+          .then((list) => {
+            const suggestion = suggestLevel(list, training.level);
+            setTraining((cur) =>
+              cur?.songId === songId && cur.result
+                ? { ...cur, result: { ...cur.result, suggestion } }
+                : cur,
+            );
+          })
+          .catch((e) => setError(String(e)));
+      }
+    }
     // Só reage ao fim da prática.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [p0.running]);
@@ -838,8 +975,8 @@ function App() {
             >
               <Icon name={icon} size={17} />
               {label}
-              {v === "library" && library.songs.length > 0 && (
-                <span className="count">{library.songs.length}</span>
+              {v === "library" && librarySongs.length > 0 && (
+                <span className="count">{librarySongs.length}</span>
               )}
             </button>
           ))}
@@ -1256,7 +1393,8 @@ function App() {
                 <button
                   key={m}
                   className={p.mode === m ? "on" : ""}
-                  title={hint}
+                  title={training ? "No treino, a execução é única em Tocar junto" : hint}
+                  disabled={!!training && m !== "play"}
                   onClick={() => practice.set("mode", m)}
                 >
                   {label}
@@ -1498,6 +1636,16 @@ function App() {
               </p>
             )}
           </section>
+          {training && currentId === training.songId && (
+            <TrainingBanner
+              training={training}
+              busy={busy}
+              onBegin={beginTraining}
+              onNext={(level) => startSight(level)}
+              onRepeat={() => startSight(training.level, training.seed, false)}
+              onLeave={leaveTraining}
+            />
+          )}
         </>
       )}
 
@@ -1607,28 +1755,34 @@ function App() {
               {p.running && p.mode === "wait" ? "Toque agora" : "Partitura"}
             </span>
           </div>
-          <Keyboard
-            pressed={pressed}
-            expected={p.running && p.mode === "wait" ? p.waiting : state.sounding}
-            flashes={p.flashes}
-            onPress={(k) => {
-              recorder.capture({ type: "noteOn", key: k, velocity: MOUSE_VELOCITY });
-              setKey(k, MOUSE_VELOCITY);
-              api.playNote(k, MOUSE_VELOCITY);
-              practice.onNote(k);
-            }}
-            onRelease={(k) => {
-              recorder.capture({ type: "noteOff", key: k });
-              setKey(k, null);
-              api.playNote(k, 0);
-            }}
-          />
+          {training?.phase === "study" && view === "score" ? (
+            <p className="muted keyboard-hidden">
+              Teclado virtual escondido durante o estudo: leia a partitura.
+            </p>
+          ) : (
+            <Keyboard
+              pressed={pressed}
+              expected={p.running && p.mode === "wait" ? p.waiting : state.sounding}
+              flashes={p.flashes}
+              onPress={(k) => {
+                recorder.capture({ type: "noteOn", key: k, velocity: MOUSE_VELOCITY });
+                setKey(k, MOUSE_VELOCITY);
+                api.playNote(k, MOUSE_VELOCITY);
+                practice.onNote(k);
+              }}
+              onRelease={(k) => {
+                recorder.capture({ type: "noteOff", key: k });
+                setKey(k, null);
+                api.playNote(k, 0);
+              }}
+            />
+          )}
         </section>
 
         {view === "library" && (
           <div className="layer">
             <Library
-              songs={library.songs}
+              songs={librarySongs}
               currentId={currentId}
               busy={busy}
               onOpen={(song) => run(() => openSong(song))}
@@ -1654,6 +1808,9 @@ function App() {
               registerNoteHandler={registerReading}
               onError={setError}
               onStudySaved={() => setPracticeVersion((v) => v + 1)}
+              onStartSight={(level) => startSight(level)}
+              version={practiceVersion}
+              busy={busy}
             />
           </div>
         )}

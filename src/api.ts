@@ -159,6 +159,17 @@ export interface StudySession {
   durationMs: number;
 }
 
+export interface SightReadingResult {
+  id?: number;
+  takenAt: number;
+  level: number;
+  seed: number;
+  songId: number | null;
+  /** 0–100. */
+  accuracy: number;
+  passed: boolean;
+}
+
 export interface UpdateStatus {
   version: string;
   repo: string;
@@ -259,6 +270,12 @@ export const api = {
       invoke<ReadingTestResult>("reading_test_save", { test }),
     /** Testes das 20 notas desde `since` (ms), do mais recente ao mais antigo. */
     tests: (since = 0) => invoke<ReadingTestResult[]>("reading_tests", { since }),
+  },
+  sight: {
+    save: (result: SightReadingResult) =>
+      invoke<SightReadingResult>("sight_reading_save", { result }),
+    /** Trechos de primeira vista desde `since` (ms). */
+    list: (since = 0) => invoke<SightReadingResult[]>("sight_readings", { since }),
   },
   study: {
     save: (session: StudySession) => invoke<StudySession>("study_session_save", { session }),

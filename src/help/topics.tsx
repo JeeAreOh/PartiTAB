@@ -761,6 +761,48 @@ export const HELP_TOPICS: HelpTopic[] = [
     ),
   },
   {
+    id: "primeira-vista",
+    group: "Estudo",
+    title: "Leitura à primeira vista",
+    keywords: "primeira vista sight reading trecho novo nível gerado inédito ler tocar sem parar aprovação",
+    body: (
+      <>
+        <p>
+          Em <b>Leitura → Primeira vista</b> o app escreve um trecho novo a cada vez, para treinar a
+          leitura de música que você nunca viu. Há 7 níveis, alinhados aos meses do plano de
+          estudo: do nível 1 (mão direita na posição de Dó, só semibreves, mínimas e semínimas) ao
+          7 (duas vozes, síncope, tercina e tonalidades até 3 acidentes).
+        </p>
+        <ol>
+          <li>
+            Escolha o nível e clique em <b>Novo trecho</b>. Ele abre na Partitura.
+          </li>
+          <li>
+            Você tem <b>30 s para estudar</b> (o teclado virtual some): veja a clave, a armadura,
+            o compasso e os padrões que se repetem. <b>Começar agora</b> pula a espera.
+          </li>
+          <li>
+            Depois, uma <b>execução única</b> em Tocar junto, com 1 compasso de contagem e o
+            metrônomo. Não pare para corrigir: siga em frente, como num exame.
+          </li>
+          <li>
+            <b>Passa</b> com 85% de precisão, tocando até o fim, sem perder um compasso inteiro.
+          </li>
+        </ol>
+        <p>
+          No fim, <b>Próximo trecho</b> gera outro do mesmo nível e <b>Repetir este</b> toca o
+          mesmo de novo (a repetição não conta para o nível). Com 5 aprovações nos últimos 6
+          trechos, o app sugere subir de nível; com 3 reprovações seguidas, sugere descer. Nada
+          muda sozinho.
+        </p>
+        <p>
+          Os trechos gerados não aparecem na Biblioteca e só os 30 mais recentes ficam guardados;
+          o resultado de cada um fica no histórico, ao lado do painel.
+        </p>
+      </>
+    ),
+  },
+  {
     id: "progresso",
     group: "Estudo",
     title: "Progresso",
@@ -783,7 +825,8 @@ export const HELP_TOPICS: HelpTopic[] = [
         </ul>
         <p>
           Contam as práticas com correção (Esperar e Tocar junto) e o tempo ativo na aba{" "}
-          <b>Leitura</b> (treino de notas e teste das 20 notas). Ao passar o mouse num dia do
+          <b>Leitura</b> (treino de notas, teste das 20 notas e o estudo da primeira vista). Ao
+          passar o mouse num dia do
           gráfico, aparece quanto foi de estudo fora das músicas.
         </p>
       </>

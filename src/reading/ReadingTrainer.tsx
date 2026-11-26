@@ -17,6 +17,7 @@ import {
 } from "./cards";
 import { NoteCard } from "./NoteCard";
 import { NoteTest } from "./NoteTest";
+import { SightReading } from "../sightreading/SightReading";
 import { useStudyTimer } from "../progress/studyTimer";
 
 const SESSION = 20;
@@ -54,6 +55,13 @@ interface Props {
   onError: (message: string) => void;
   /** Uma sessão de estudo foi gravada (o Progresso recarrega). */
   onStudySaved?: () => void;
+  /** Gera e abre um trecho de primeira vista no nível escolhido. */
+  onStartSight?: (level: number) => void;
+  /** Muda quando há prática nova (os painéis recarregam o histórico). */
+  version?: number;
+  busy?: boolean;
+  /** Nível de primeira vista do mês do plano, quando houver. */
+  planSightLevel?: number | null;
 }
 
 interface Result {
@@ -62,15 +70,25 @@ interface Result {
   ms: number;
 }
 
-type Mode = "training" | "test";
+type Mode = "training" | "test" | "sight";
+const MODES: Mode[] = ["training", "test", "sight"];
 const MODE_KEY = "partitab.readingMode";
 
 /** Aba Leitura: treino com repetição espaçada e o teste das 20 notas. */
-export function ReadingTrainer({ registerNoteHandler, onError, onStudySaved }: Props) {
+export function ReadingTrainer({
+  registerNoteHandler,
+  onError,
+  onStudySaved,
+  onStartSight,
+  version,
+  busy = false,
+  planSightLevel,
+}: Props) {
   const [settings, setSettings] = useState<Settings>(loadSettings);
   const [mode, setMode] = useState<Mode>(() => {
     try {
-      return localStorage.getItem(MODE_KEY) === "test" ? "test" : "training";
+      const saved = localStorage.getItem(MODE_KEY) as Mode;
+      return MODES.includes(saved) ? saved : "training";
     } catch {
       return "training";
     }
@@ -105,6 +123,7 @@ export function ReadingTrainer({ registerNoteHandler, onError, onStudySaved }: P
           [
             ["training", "Treino de notas"],
             ["test", "Teste das 20 notas"],
+            ["sight", "Primeira vista"],
           ] as const
         ).map(([v, label]) => (
           <button
@@ -118,61 +137,69 @@ export function ReadingTrainer({ registerNoteHandler, onError, onStudySaved }: P
           </button>
         ))}
       </div>
-      <div className="reading-options">
-        <div className="segmented" role="group" aria-label="Clave">
-          {(
-            [
-              ["treble", "Clave de sol"],
-              ["bass", "Clave de fá"],
-              ["both", "As duas"],
-            ] as const
-          ).map(([v, label]) => (
-            <button
-              key={v}
-              className={settings.clefs === v ? "on" : ""}
-              onClick={() => set("clefs", v)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        <div className="segmented" role="group" aria-label="Extensão">
-          {(
-            [
-              ["staff", "Na pauta"],
-              ["ledger", "Linhas suplementares"],
-            ] as const
-          ).map(([v, label]) => (
-            <button
-              key={v}
-              className={settings.range === v ? "on" : ""}
-              onClick={() => set("range", v)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        {mode === "training" && (
+      {mode !== "sight" && (
+        <div className="reading-options">
+          <div className="segmented" role="group" aria-label="Clave">
+            {(
+              [
+                ["treble", "Clave de sol"],
+                ["bass", "Clave de fá"],
+                ["both", "As duas"],
+              ] as const
+            ).map(([v, label]) => (
+              <button
+                key={v}
+                className={settings.clefs === v ? "on" : ""}
+                onClick={() => set("clefs", v)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className="segmented" role="group" aria-label="Extensão">
+            {(
+              [
+                ["staff", "Na pauta"],
+                ["ledger", "Linhas suplementares"],
+              ] as const
+            ).map(([v, label]) => (
+              <button
+                key={v}
+                className={settings.range === v ? "on" : ""}
+                onClick={() => set("range", v)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {mode === "training" && (
+            <label className="toggle">
+              <input
+                type="checkbox"
+                checked={settings.accidentals}
+                onChange={(e) => set("accidentals", e.target.checked)}
+              />
+              Sustenidos e bemóis
+            </label>
+          )}
           <label className="toggle">
             <input
               type="checkbox"
-              checked={settings.accidentals}
-              onChange={(e) => set("accidentals", e.target.checked)}
+              checked={settings.hideKeyboard}
+              onChange={(e) => set("hideKeyboard", e.target.checked)}
             />
-            Sustenidos e bemóis
+            Esconder teclado
           </label>
-        )}
-        <label className="toggle">
-          <input
-            type="checkbox"
-            checked={settings.hideKeyboard}
-            onChange={(e) => set("hideKeyboard", e.target.checked)}
-          />
-          Esconder teclado
-        </label>
-      </div>
-
-      {mode === "training" ? (
+        </div>
+      )}
+      {mode === "sight" ? (
+        <SightReading
+          version={version}
+          busy={busy}
+          planLevel={planSightLevel}
+          onStart={(level) => onStartSight?.(level)}
+        />
+      ) : mode === "training" ? (
         <NoteTraining
           registerNoteHandler={registerNoteHandler}
           onError={onError}

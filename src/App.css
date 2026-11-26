@@ -2823,3 +2823,115 @@ table.attempts {
     padding: 8px 16px 24px;
   }
 }
+
+/* ----------------------------------------------------- treino guiado */
+
+.training-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin: 0 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.training-banner.passed {
+  border-left-color: var(--ok);
+}
+
+.training-banner.failed {
+  border-left-color: var(--error);
+}
+
+.training-banner .training-tag {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.training-banner .training-text {
+  flex: 1;
+  min-width: 220px;
+}
+
+.training-banner .count {
+  font-variant-numeric: tabular-nums;
+}
+
+.keyboard-hidden {
+  text-align: center;
+  padding: 28px 12px;
+}
+
+.sight-panel {
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 12px;
+  padding: 24px;
+  overflow: auto;
+}
+
+.sight-panel h2 {
+  margin: 4px 0 0;
+  font-size: 20px;
+}
+
+.sight-panel p {
+  margin: 0;
+}
+
+.sight-levels {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+  width: 100%;
+}
+
+.sight-levels button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 4px;
+}
+
+.sight-levels button b {
+  font-size: 18px;
+}
+
+.sight-levels button.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+}
+
+.sight-suggestion {
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+}
+
+.sight-steps {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  line-height: 1.6;
+}
+
+.hardest b.good {
+  color: var(--ok);
+}
+
+.hardest b.bad {
+  color: var(--error);
+}
+
+.reading-card.sight-panel {
+  background: var(--surface);
+  color: var(--text);
+}

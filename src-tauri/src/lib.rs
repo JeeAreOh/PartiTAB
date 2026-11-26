@@ -16,8 +16,8 @@ use tauri::{AppHandle, Emitter, Manager, RunEvent, State};
 
 use audio::{AudioCommand, AudioEngine, AudioInfo};
 use library::{
-    Attempt, CollectionResult, ErrorMap, Library, ReadingCard, ReadingTest, Song, SongPatch,
-    StudySession,
+    Attempt, CollectionResult, ErrorMap, Library, ReadingCard, ReadingTest, SightReading, Song,
+    SongPatch, StudySession,
 };
 use midi::{MidiSession, SynthMessage};
 use sounds::{CatalogItem, PresetInfo, SoundSettings, VelocityCurve};
@@ -527,6 +527,19 @@ fn study_session_save(
 }
 
 #[tauri::command]
+fn sight_reading_save(
+    lib: State<LibraryState>,
+    result: SightReading,
+) -> Result<SightReading, String> {
+    lib.get()?.save_sight_reading(&result)
+}
+
+#[tauri::command]
+fn sight_readings(lib: State<LibraryState>, since: i64) -> Result<Vec<SightReading>, String> {
+    lib.get()?.sight_readings(since)
+}
+
+#[tauri::command]
 fn study_sessions(lib: State<LibraryState>, since: i64) -> Result<Vec<StudySession>, String> {
     lib.get()?.study_sessions(since)
 }
@@ -684,6 +697,8 @@ pub fn run() {
             reading_tests,
             study_session_save,
             study_sessions,
+            sight_reading_save,
+            sight_readings,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

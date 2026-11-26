@@ -104,6 +104,19 @@ const MIGRATIONS: &[&str] = &[
     );
     CREATE INDEX study_sessions_started_at ON study_sessions(started_at);
 ",
+    "
+    -- Leitura à primeira vista: um trecho gerado por linha (a música pode ser apagada).
+    CREATE TABLE sight_reading (
+        id INTEGER PRIMARY KEY,
+        taken_at INTEGER NOT NULL,
+        level INTEGER NOT NULL,
+        seed INTEGER NOT NULL,
+        song_id INTEGER REFERENCES songs(id) ON DELETE SET NULL,
+        accuracy REAL NOT NULL,
+        passed INTEGER NOT NULL
+    );
+    CREATE INDEX sight_reading_taken_at ON sight_reading(taken_at);
+",
 ];
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -246,6 +259,21 @@ pub struct StudySession {
     pub kind: String,
     pub started_at: i64,
     pub duration_ms: i64,
+}
+
+/// Resultado de um trecho de leitura à primeira vista.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SightReading {
+    #[serde(default)]
+    pub id: i64,
+    pub taken_at: i64,
+    pub level: i64,
+    pub seed: i64,
+    pub song_id: Option<i64>,
+    /// 0–100.
+    pub accuracy: f64,
+    pub passed: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -923,6 +951,45 @@ impl Library {
         .map_err(err)
     }
 
+    pub fn save_sight_reading(&self, r: &SightReading) -> Result<SightReading> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO sight_reading (taken_at, level, seed, song_id, accuracy, passed)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![r.taken_at, r.level, r.seed, r.song_id, r.accuracy, r.passed],
+        )
+        .map_err(err)?;
+        Ok(SightReading {
+            id: conn.last_insert_rowid(),
+            ..r.clone()
+        })
+    }
+
+    /// Trechos desde `since` (ms), do mais recente para o mais antigo.
+    pub fn sight_readings(&self, since: i64) -> Result<Vec<SightReading>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, taken_at, level, seed, song_id, accuracy, passed FROM sight_reading
+                 WHERE taken_at >= ?1 ORDER BY taken_at DESC, id DESC",
+            )
+            .map_err(err)?;
+        stmt.query_map([since], |r| {
+            Ok(SightReading {
+                id: r.get(0)?,
+                taken_at: r.get(1)?,
+                level: r.get(2)?,
+                seed: r.get(3)?,
+                song_id: r.get(4)?,
+                accuracy: r.get(5)?,
+                passed: r.get(6)?,
+            })
+        })
+        .map_err(err)?
+        .collect::<rusqlite::Result<_>>()
+        .map_err(err)
+    }
+
     /// Execuções da música, da mais recente para a mais antiga.
     pub fn attempts(&self, song_id: i64) -> Result<Vec<Attempt>> {
         self.query_attempts("song_id = ?1", song_id)
@@ -1233,6 +1300,28 @@ mod tests {
         assert_eq!(list[0].kind, "reading");
         let json = serde_json::to_value(&list[0]).unwrap();
         assert_eq!(json["durationMs"], 90_000);
+    }
+
+    #[test]
+    fn sight_reading_survives_song_deletion() {
+        let (_dir, lib, src) = setup();
+        let song = lib.import(&src, None, None).unwrap();
+        let r = SightReading {
+            id: 0,
+            taken_at: 10,
+            level: 3,
+            seed: 42,
+            song_id: Some(song.id),
+            accuracy: 91.5,
+            passed: true,
+        };
+        lib.save_sight_reading(&r).unwrap();
+        lib.delete(song.id).unwrap();
+        let list = lib.sight_readings(0).unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].song_id, None);
+        assert!(list[0].passed);
+        assert_eq!(serde_json::to_value(&list[0]).unwrap()["seed"], 42);
     }
 
     #[test]

@@ -217,6 +217,15 @@ const FIGURES: [number, string, boolean][] = [
   [3, "16th", false],
 ];
 
+/**
+ * Figura da pausa de compasso inteiro: o alphaTab lê a duração pela figura
+ * (sem ela, a pausa vale uma semínima e o compasso fica incompleto).
+ */
+function measureRestType(length: number): string {
+  const fig = FIGURES.find(([u]) => u === length);
+  return fig ? `<type>${fig[1]}</type>${fig[2] ? "<dot/>" : ""}` : "";
+}
+
 interface Piece {
   length: number;
   type: string;
@@ -334,7 +343,7 @@ export function writeMusicXml(score: XmlScore): string {
     const inside = items.filter((it) => it.start < mEnd && it.end > m.start);
     if (!inside.length) {
       return required
-        ? `<note><rest measure="yes"/><duration>${m.length}</duration><voice>${voice}</voice><staff>${staff}</staff></note>`
+        ? `<note><rest${measureRestType(m.length) ? "" : ' measure="yes"'}/><duration>${m.length}</duration><voice>${voice}</voice>${measureRestType(m.length)}<staff>${staff}</staff></note>`
         : "";
     }
     const beat = beatLength(m.num, m.den);
@@ -455,7 +464,8 @@ export function writeMusicXml(score: XmlScore): string {
       let first = true;
       staffVoices.forEach((vs, s) => {
         vs.forEach((items, v) => {
-          const xml = writeVoice(items, m, s * 4 + v + 1, s + 1, v === 0);
+          // Vozes numeradas por pauta: o alphaTab desenha em cinza a partir da 2.ª voz.
+          const xml = writeVoice(items, m, v + 1, s + 1, v === 0);
           if (!xml) return;
           if (!first) out.push(`<backup><duration>${m.length}</duration></backup>`);
           out.push(xml);

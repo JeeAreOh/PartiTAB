@@ -24,6 +24,15 @@ export const DEFAULT_FILTERS: Filters = {
   sort: "title",
 };
 
+/**
+ * Estilos gerados pelo app para treino (leitura à primeira vista, ritmo): não
+ * aparecem na Biblioteca e só as últimas ficam guardadas.
+ */
+export const HIDDEN_STYLES = ["Primeira vista", "Ritmo"];
+
+/** A música aparece na grade da Biblioteca. */
+export const inLibrary = (s: Song) => !HIDDEN_STYLES.includes(s.style);
+
 /** Comparação sem acentos e sem caixa ("Canção" encontra "cancao"). */
 export const normalize = (s: string) =>
   s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
@@ -36,6 +45,7 @@ const matchesStatus = (s: Song, status: Status) =>
 
 /** Aplica tudo, menos o filtro `ignore` (para contar as opções desse filtro). */
 function passes(s: Song, f: Filters, ignore?: keyof Filters) {
+  if (!inLibrary(s)) return false;
   const q = normalize(f.query);
   if (q && !normalize(`${s.title} ${s.artist} ${s.style}`).includes(q)) return false;
   if (ignore !== "status" && !matchesStatus(s, f.status)) return false;

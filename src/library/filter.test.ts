@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { Song } from "../api";
-import { DEFAULT_FILTERS, difficultyCounts, facet, filterSongs, statusCounts } from "./filter";
+import {
+  DEFAULT_FILTERS,
+  difficultyCounts,
+  facet,
+  filterSongs,
+  inLibrary,
+  statusCounts,
+} from "./filter";
 
 let id = 0;
 const song = (s: Partial<Song>): Song => ({
@@ -130,5 +137,17 @@ describe("contagens", () => {
       favorites: 1,
     });
     expect(difficultyCounts(songs, DEFAULT_FILTERS)).toEqual([2, 1, 1, 0, 1, 0]);
+  });
+});
+
+describe("estilos de treino", () => {
+  it("trechos de primeira vista e de ritmo não aparecem na Biblioteca", () => {
+    const list = [
+      song({ title: "Peça" }),
+      song({ title: "Leitura · Nível 1 · #3", style: "Primeira vista" }),
+      song({ title: "Ritmo · Nível 2 · #4", style: "Ritmo" }),
+    ];
+    expect(filterSongs(list, DEFAULT_FILTERS).map((s) => s.title)).toEqual(["Peça"]);
+    expect(list.filter(inLibrary)).toHaveLength(1);
   });
 });

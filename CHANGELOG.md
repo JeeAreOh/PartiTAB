@@ -2,6 +2,13 @@
 
 As versões e os instaladores ficam na [página de versões](https://github.com/JeeAreOh/PartiTAB/releases).
 
+## 0.6.0 — 26/11/2026
+
+- **Primeira vista** na aba Leitura: trechos novos a cada vez, em 7 níveis, com 30 s de estudo, execução única e aprovação com 85% de precisão.
+- Sugestão de subir ou descer de nível, maior nível aprovado e taxa de aprovação dos últimos 20 trechos.
+- Os trechos gerados ficam fora da Biblioteca (só os 30 mais recentes são guardados).
+- A mão esquerda das partituras geradas (MIDI, técnica, primeira vista) é desenhada em preto, não em cinza.
+
 ## 0.5.0 — 26/11/2026
 
 - **Teste das 20 notas** na aba Leitura: cronômetro, erros, melhor tempo e os últimos 10 testes.
