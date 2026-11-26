@@ -268,6 +268,9 @@ export const api = {
     save: (card: import("./reading/cards").CardState) => invoke<void>("reading_save", { card }),
     saveTest: (test: ReadingTestResult) =>
       invoke<ReadingTestResult>("reading_test_save", { test }),
+    patterns: () => invoke<import("./reading/patterns").PatternState[]>("pattern_cards"),
+    savePattern: (card: import("./reading/patterns").PatternState) =>
+      invoke<void>("pattern_save", { card }),
     /** Testes das 20 notas desde `since` (ms), do mais recente ao mais antigo. */
     tests: (since = 0) => invoke<ReadingTestResult[]>("reading_tests", { since }),
   },

@@ -727,7 +727,7 @@ export const HELP_TOPICS: HelpTopic[] = [
     id: "leitura",
     group: "Estudo",
     title: "Leitura de partitura",
-    keywords: "leitura ler notas cartões clave sol fá linhas suplementares sustenidos bemóis repetição espaçada teste 20 notas cronômetro recorde",
+    keywords: "leitura ler notas cartões clave sol fá linhas suplementares sustenidos bemóis repetição espaçada teste 20 notas cronômetro recorde intervalo tríade acorde inversão padrões",
     body: (
       <>
         <p>
@@ -753,6 +753,23 @@ export const HELP_TOPICS: HelpTopic[] = [
           aparecem o melhor tempo e os últimos 10 testes com as mesmas opções. É a medida que o
           plano de estudo usa nas metas (por exemplo, menos de 40 s nas duas claves).
         </p>
+        <p>
+          <b>Intervalos e tríades</b> treina a leitura por desenho, em vez de nota a nota:
+        </p>
+        <ul>
+          <li>
+            <b>Intervalos</b> de 2ª a 8ª. Harmônicos (notas empilhadas): toque as duas juntas.
+            Melódicos (lado a lado): toque as duas na ordem, da esquerda para a direita.
+          </li>
+          <li>
+            <b>Tríades</b> maiores e menores, no estado fundamental e nas inversões, nas
+            tonalidades com até 3 acidentes: toque as três notas juntas.
+          </li>
+          <li>
+            “Juntas” quer dizer em até 150 ms entre a primeira e a última. O nome do intervalo ou
+            do acorde aparece só depois da resposta. Os que você erra voltam mais vezes.
+          </li>
+        </ul>
         <p>
           O tempo em que você está respondendo cartões ou testes conta no <b>Progresso</b>. Depois
           de 60 s sem tocar, o tempo para de contar.
@@ -858,7 +875,8 @@ export const HELP_TOPICS: HelpTopic[] = [
         </ul>
         <p>
           Contam as práticas com correção (Esperar e Tocar junto) e o tempo ativo na aba{" "}
-          <b>Leitura</b> (treino de notas, teste das 20 notas e o estudo da primeira vista). Ao
+          <b>Leitura</b> (notas, teste das 20 notas, intervalos e tríades, estudo da primeira
+          vista e do ritmo). Ao
           passar o mouse num dia do
           gráfico, aparece quanto foi de estudo fora das músicas.
         </p>

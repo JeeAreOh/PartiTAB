@@ -117,6 +117,17 @@ const MIGRATIONS: &[&str] = &[
     );
     CREATE INDEX sight_reading_taken_at ON sight_reading(taken_at);
 ",
+    "
+    -- Cartões de padrões (intervalos e tríades), com o ID do cartão em texto.
+    CREATE TABLE pattern_cards (
+        id TEXT PRIMARY KEY,
+        box INTEGER NOT NULL,
+        seen INTEGER NOT NULL,
+        correct INTEGER NOT NULL,
+        total_ms INTEGER NOT NULL,
+        last_seen INTEGER
+    );
+",
 ];
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -259,6 +270,20 @@ pub struct StudySession {
     pub kind: String,
     pub started_at: i64,
     pub duration_ms: i64,
+}
+
+/// Estado de um cartão de padrão (intervalo ou tríade).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PatternCard {
+    /// Ex.: "interval:treble:64:67:harm".
+    pub id: String,
+    #[serde(rename = "box")]
+    pub box_: i64,
+    pub seen: i64,
+    pub correct: i64,
+    pub total_ms: i64,
+    pub last_seen: Option<i64>,
 }
 
 /// Resultado de um trecho de leitura à primeira vista.
@@ -883,7 +908,13 @@ impl Library {
         conn.execute(
             "INSERT INTO reading_tests (taken_at, clefs, range, total_ms, errors)
              VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![t.taken_at, t.clefs, t.range, t.total_ms.max(0), t.errors.max(0)],
+            params![
+                t.taken_at,
+                t.clefs,
+                t.range,
+                t.total_ms.max(0),
+                t.errors.max(0)
+            ],
         )
         .map_err(err)?;
         Ok(ReadingTest {
@@ -949,6 +980,48 @@ impl Library {
         .map_err(err)?
         .collect::<rusqlite::Result<_>>()
         .map_err(err)
+    }
+
+    pub fn pattern_cards(&self) -> Result<Vec<PatternCard>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, box, seen, correct, total_ms, last_seen FROM pattern_cards ORDER BY id",
+            )
+            .map_err(err)?;
+        stmt.query_map([], |r| {
+            Ok(PatternCard {
+                id: r.get(0)?,
+                box_: r.get(1)?,
+                seen: r.get(2)?,
+                correct: r.get(3)?,
+                total_ms: r.get(4)?,
+                last_seen: r.get(5)?,
+            })
+        })
+        .map_err(err)?
+        .collect::<rusqlite::Result<_>>()
+        .map_err(err)
+    }
+
+    pub fn save_pattern_card(&self, c: &PatternCard) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO pattern_cards (id, box, seen, correct, total_ms, last_seen)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT (id) DO UPDATE SET box = ?2, seen = ?3, correct = ?4,
+                 total_ms = ?5, last_seen = ?6",
+            params![
+                c.id,
+                c.box_.clamp(1, 5),
+                c.seen,
+                c.correct,
+                c.total_ms,
+                c.last_seen
+            ],
+        )
+        .map_err(err)?;
+        Ok(())
     }
 
     pub fn save_sight_reading(&self, r: &SightReading) -> Result<SightReading> {
@@ -1284,7 +1357,11 @@ mod tests {
         };
         let saved = lib.save_reading_test(&t).unwrap();
         assert!(saved.id > 0);
-        lib.save_reading_test(&ReadingTest { taken_at: 50, ..t.clone() }).unwrap();
+        lib.save_reading_test(&ReadingTest {
+            taken_at: 50,
+            ..t.clone()
+        })
+        .unwrap();
         let tests = lib.reading_tests(60).unwrap();
         assert_eq!(tests, vec![saved]);
 
@@ -1300,6 +1377,27 @@ mod tests {
         assert_eq!(list[0].kind, "reading");
         let json = serde_json::to_value(&list[0]).unwrap();
         assert_eq!(json["durationMs"], 90_000);
+    }
+
+    #[test]
+    fn pattern_cards_are_upserted() {
+        let (_dir, lib, _src) = setup();
+        let mut c = PatternCard {
+            id: "interval:treble:64:67:harm".into(),
+            box_: 1,
+            seen: 1,
+            correct: 0,
+            total_ms: 3000,
+            last_seen: Some(5),
+        };
+        lib.save_pattern_card(&c).unwrap();
+        c.box_ = 7;
+        c.seen = 2;
+        lib.save_pattern_card(&c).unwrap();
+        let list = lib.pattern_cards().unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!((list[0].box_, list[0].seen), (5, 2));
+        assert_eq!(serde_json::to_value(&list[0]).unwrap()["box"], 5);
     }
 
     #[test]

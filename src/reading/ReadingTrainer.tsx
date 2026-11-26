@@ -19,6 +19,8 @@ import { NoteCard } from "./NoteCard";
 import { NoteTest } from "./NoteTest";
 import { SightReading } from "../sightreading/SightReading";
 import { RhythmPanel } from "../rhythm/RhythmPanel";
+import { PatternTrainer } from "./PatternTrainer";
+import type { PatternKind } from "./patterns";
 import { useStudyTimer } from "../progress/studyTimer";
 
 const SESSION = 20;
@@ -30,6 +32,8 @@ interface Settings {
   range: Range;
   accidentals: boolean;
   hideKeyboard: boolean;
+  /** Cartões de padrões: intervalos ou tríades. */
+  patternKind: PatternKind;
 }
 
 const DEFAULTS: Settings = {
@@ -37,6 +41,7 @@ const DEFAULTS: Settings = {
   range: "staff",
   accidentals: false,
   hideKeyboard: false,
+  patternKind: "interval",
 };
 
 function loadSettings(): Settings {
@@ -74,8 +79,8 @@ interface Result {
   ms: number;
 }
 
-type Mode = "training" | "test" | "sight" | "rhythm";
-const MODES: Mode[] = ["training", "test", "sight", "rhythm"];
+type Mode = "training" | "test" | "patterns" | "sight" | "rhythm";
+const MODES: Mode[] = ["training", "test", "patterns", "sight", "rhythm"];
 const MODE_KEY = "partitab.readingMode";
 
 /** Aba Leitura: treino com repetição espaçada e o teste das 20 notas. */
@@ -122,6 +127,11 @@ export function ReadingTrainer({
     );
   }, [settings.clefs, settings.range, settings.accidentals, mode]);
 
+  const patternClefs = useMemo<Clef[]>(
+    () => (settings.clefs === "both" ? ["treble", "bass"] : [settings.clefs]),
+    [settings.clefs],
+  );
+
   return (
     <section className="reading">
       <div className="segmented reading-modes" role="tablist" aria-label="Tipo de treino">
@@ -129,6 +139,7 @@ export function ReadingTrainer({
           [
             ["training", "Treino de notas"],
             ["test", "Teste das 20 notas"],
+            ["patterns", "Intervalos e tríades"],
             ["sight", "Primeira vista"],
             ["rhythm", "Ritmo"],
           ] as const
@@ -163,22 +174,42 @@ export function ReadingTrainer({
               </button>
             ))}
           </div>
-          <div className="segmented" role="group" aria-label="Extensão">
-            {(
-              [
-                ["staff", "Na pauta"],
-                ["ledger", "Linhas suplementares"],
-              ] as const
-            ).map(([v, label]) => (
-              <button
-                key={v}
-                className={settings.range === v ? "on" : ""}
-                onClick={() => set("range", v)}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+          {mode === "patterns" && (
+            <div className="segmented" role="group" aria-label="Padrão">
+              {(
+                [
+                  ["interval", "Intervalos"],
+                  ["triad", "Tríades"],
+                ] as const
+              ).map(([v, label]) => (
+                <button
+                  key={v}
+                  className={settings.patternKind === v ? "on" : ""}
+                  onClick={() => set("patternKind", v)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+          {mode !== "patterns" && (
+            <div className="segmented" role="group" aria-label="Extensão">
+              {(
+                [
+                  ["staff", "Na pauta"],
+                  ["ledger", "Linhas suplementares"],
+                ] as const
+              ).map(([v, label]) => (
+                <button
+                  key={v}
+                  className={settings.range === v ? "on" : ""}
+                  onClick={() => set("range", v)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
           {mode === "training" && (
             <label className="toggle">
               <input
@@ -212,6 +243,15 @@ export function ReadingTrainer({
           busy={busy}
           planLevel={planSightLevel}
           onStart={(level) => onStartSight?.(level)}
+        />
+      ) : mode === "patterns" ? (
+        <PatternTrainer
+          registerNoteHandler={registerNoteHandler}
+          onError={onError}
+          onStudySaved={onStudySaved}
+          kind={settings.patternKind}
+          clefs={patternClefs}
+          hideKeyboard={settings.hideKeyboard}
         />
       ) : mode === "training" ? (
         <NoteTraining

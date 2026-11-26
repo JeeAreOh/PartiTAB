@@ -16,8 +16,8 @@ use tauri::{AppHandle, Emitter, Manager, RunEvent, State};
 
 use audio::{AudioCommand, AudioEngine, AudioInfo};
 use library::{
-    Attempt, CollectionResult, ErrorMap, Library, ReadingCard, ReadingTest, SightReading, Song,
-    SongPatch, StudySession,
+    Attempt, CollectionResult, ErrorMap, Library, PatternCard, ReadingCard, ReadingTest,
+    SightReading, Song, SongPatch, StudySession,
 };
 use midi::{MidiSession, SynthMessage};
 use sounds::{CatalogItem, PresetInfo, SoundSettings, VelocityCurve};
@@ -397,10 +397,9 @@ async fn update_install(app: AppHandle, asset: updates::Asset) -> Result<(), Str
         .temp_dir()
         .map_err(|e| e.to_string())?
         .join("PartiTAB-atualizacao");
-    let installer =
-        tauri::async_runtime::spawn_blocking(move || updates::download(&asset, &dir))
-            .await
-            .map_err(|e| e.to_string())??;
+    let installer = tauri::async_runtime::spawn_blocking(move || updates::download(&asset, &dir))
+        .await
+        .map_err(|e| e.to_string())??;
 
     #[cfg(windows)]
     {
@@ -524,6 +523,16 @@ fn study_session_save(
     session: StudySession,
 ) -> Result<StudySession, String> {
     lib.get()?.save_study_session(&session)
+}
+
+#[tauri::command]
+fn pattern_cards(lib: State<LibraryState>) -> Result<Vec<PatternCard>, String> {
+    lib.get()?.pattern_cards()
+}
+
+#[tauri::command]
+fn pattern_save(lib: State<LibraryState>, card: PatternCard) -> Result<(), String> {
+    lib.get()?.save_pattern_card(&card)
 }
 
 #[tauri::command]
@@ -699,6 +708,8 @@ pub fn run() {
             study_sessions,
             sight_reading_save,
             sight_readings,
+            pattern_cards,
+            pattern_save,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

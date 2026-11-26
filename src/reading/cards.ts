@@ -32,7 +32,7 @@ export const FAST_MS = 2500;
 const WEIGHTS = [0, 16, 8, 4, 2, 1];
 
 /** Primeira nota da linha de baixo: Mi4 na clave de sol, Sol2 na de fá. */
-const BOTTOM_LINE: Record<Clef, number> = { treble: 30, bass: 18 };
+export const BOTTOM_LINE: Record<Clef, number> = { treble: 30, bass: 18 };
 
 const RANGES: Record<Clef, Record<Range, [number, number]>> = {
   // Só na pauta (linhas e espaços) / com até duas linhas suplementares.
@@ -43,7 +43,7 @@ const RANGES: Record<Clef, Record<Range, [number, number]>> = {
 const BLACK = new Set([1, 3, 6, 8, 10]);
 /** Classe de altura → letra (0 = C) para teclas brancas. */
 const LETTER: Record<number, number> = { 0: 0, 2: 1, 4: 2, 5: 3, 7: 4, 9: 5, 11: 6 };
-const NAMES = ["Dó", "Ré", "Mi", "Fá", "Sol", "Lá", "Si"];
+export const NAMES = ["Dó", "Ré", "Mi", "Fá", "Sol", "Lá", "Si"];
 
 export const cardId = (clef: Clef, key: number) => `${clef}:${key}`;
 

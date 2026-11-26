@@ -2935,3 +2935,9 @@ table.attempts {
   background: var(--surface);
   color: var(--text);
 }
+
+.note-card .pattern-name {
+  font-size: 15px;
+  font-weight: 600;
+  fill: currentColor;
+}
