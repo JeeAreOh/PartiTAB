@@ -96,7 +96,8 @@ export const HELP_TOPICS: HelpTopic[] = [
         <p>
           Os nomes das oitavas seguem a Yamaha, como no painel do PSR: o dó central é <b>C3</b>{" "}
           (Dó3), e o teclado vai de C1 a C6. Alguns livros e programas usam a nomenclatura
-          científica, em que o mesmo dó central se chama C4.
+          científica, em que o mesmo dó central se chama C4: para usar essa, mude em{" "}
+          <b>Ajustes → Tela → Nome das oitavas</b>.
         </p>
       </>
     ),
@@ -710,8 +711,14 @@ export const HELP_TOPICS: HelpTopic[] = [
         </p>
         <p>
           <b>Caminho sugerido</b> leva do mais fácil ao mais difícil; <b>Seus exercícios</b>{" "}
-          mostra os já praticados com a melhor nota. Dica: comece com mãos separadas a 60–72 bpm
-          e suba o andamento só quando sair limpo.
+          mostra os já praticados com a melhor nota e o <b>andamento limpo</b>: o mais rápido que
+          você tocou em Tocar junto, até o fim, com 95% de precisão ou mais (andamento do exercício
+          × velocidade).
+        </p>
+        <p>
+          <b>Metrônomo progressivo:</b> depois de 3 execuções limpas seguidas a 100%, aparece{" "}
+          <b>Subir para N bpm?</b> (+4 bpm). O app só sugere; o andamento muda quando você clica.
+          Dica: comece com mãos separadas a 60–72 bpm.
         </p>
       </>
     ),
@@ -720,7 +727,7 @@ export const HELP_TOPICS: HelpTopic[] = [
     id: "leitura",
     group: "Estudo",
     title: "Leitura de partitura",
-    keywords: "leitura ler notas cartões clave sol fá linhas suplementares sustenidos bemóis repetição espaçada",
+    keywords: "leitura ler notas cartões clave sol fá linhas suplementares sustenidos bemóis repetição espaçada teste 20 notas cronômetro recorde",
     body: (
       <>
         <p>
@@ -739,6 +746,17 @@ export const HELP_TOPICS: HelpTopic[] = [
             fica salvo.
           </li>
         </ul>
+        <p>
+          <b>Teste das 20 notas</b> mede quanto tempo você leva para ler 20 notas sorteadas, nas
+          claves e na extensão escolhidas (sem sustenidos e bemóis). O cronômetro corre do início
+          ao fim; se errar, a nota fica na tela até você acertar, e o erro é contado. Ao lado
+          aparecem o melhor tempo e os últimos 10 testes com as mesmas opções. É a medida que o
+          plano de estudo usa nas metas (por exemplo, menos de 40 s nas duas claves).
+        </p>
+        <p>
+          O tempo em que você está respondendo cartões ou testes conta no <b>Progresso</b>. Depois
+          de 60 s sem tocar, o tempo para de contar.
+        </p>
       </>
     ),
   },
@@ -763,7 +781,11 @@ export const HELP_TOPICS: HelpTopic[] = [
           </li>
           <li>Gráfico de minutos por dia (30 dias) e as músicas que mais evoluíram.</li>
         </ul>
-        <p>Contam só as práticas com correção (Esperar e Tocar junto).</p>
+        <p>
+          Contam as práticas com correção (Esperar e Tocar junto) e o tempo ativo na aba{" "}
+          <b>Leitura</b> (treino de notas e teste das 20 notas). Ao passar o mouse num dia do
+          gráfico, aparece quanto foi de estudo fora das músicas.
+        </p>
       </>
     ),
   },

@@ -1521,6 +1521,33 @@ table.attempts {
   gap: 12px;
 }
 
+.technique-faster {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 0 10px 8px;
+}
+
+.reading-modes {
+  align-self: flex-start;
+}
+
+.test-clock {
+  font-size: 28px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.test-chart .bar {
+  fill: var(--accent);
+}
+
+.test-chart .axis {
+  font-size: 9px;
+  fill: var(--muted);
+}
+
 .reading-options {
   display: flex;
   flex-wrap: wrap;

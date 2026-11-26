@@ -85,6 +85,25 @@ const MIGRATIONS: &[&str] = &[
     ALTER TABLE attempts ADD COLUMN duration_ms INTEGER NOT NULL DEFAULT 0;
     CREATE INDEX attempts_played_at ON attempts(played_at);
 ",
+    "
+    -- Teste das 20 notas (aba Leitura): tempo total e erros.
+    CREATE TABLE reading_tests (
+        id INTEGER PRIMARY KEY,
+        taken_at INTEGER NOT NULL,
+        clefs TEXT NOT NULL,
+        range TEXT NOT NULL,
+        total_ms INTEGER NOT NULL,
+        errors INTEGER NOT NULL
+    );
+    -- Tempo de estudo fora das músicas (leitura, ritmo, padrões...).
+    CREATE TABLE study_sessions (
+        id INTEGER PRIMARY KEY,
+        kind TEXT NOT NULL,
+        started_at INTEGER NOT NULL,
+        duration_ms INTEGER NOT NULL
+    );
+    CREATE INDEX study_sessions_started_at ON study_sessions(started_at);
+",
 ];
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -200,6 +219,33 @@ pub struct ReadingCard {
     pub correct: i64,
     pub total_ms: i64,
     pub last_seen: Option<i64>,
+}
+
+/// Um teste das 20 notas.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadingTest {
+    #[serde(default)]
+    pub id: i64,
+    pub taken_at: i64,
+    /// "treble", "bass" ou "both".
+    pub clefs: String,
+    /// "staff" ou "ledger".
+    pub range: String,
+    pub total_ms: i64,
+    pub errors: i64,
+}
+
+/// Tempo de estudo fora das músicas.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct StudySession {
+    #[serde(default)]
+    pub id: i64,
+    /// "reading", "reading_test", "sight_reading", "patterns" ou "rhythm".
+    pub kind: String,
+    pub started_at: i64,
+    pub duration_ms: i64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -804,6 +850,79 @@ impl Library {
         Ok(())
     }
 
+    pub fn save_reading_test(&self, t: &ReadingTest) -> Result<ReadingTest> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO reading_tests (taken_at, clefs, range, total_ms, errors)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![t.taken_at, t.clefs, t.range, t.total_ms.max(0), t.errors.max(0)],
+        )
+        .map_err(err)?;
+        Ok(ReadingTest {
+            id: conn.last_insert_rowid(),
+            ..t.clone()
+        })
+    }
+
+    /// Testes desde `since` (ms), do mais recente para o mais antigo.
+    pub fn reading_tests(&self, since: i64) -> Result<Vec<ReadingTest>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, taken_at, clefs, range, total_ms, errors FROM reading_tests
+                 WHERE taken_at >= ?1 ORDER BY taken_at DESC, id DESC",
+            )
+            .map_err(err)?;
+        stmt.query_map([since], |r| {
+            Ok(ReadingTest {
+                id: r.get(0)?,
+                taken_at: r.get(1)?,
+                clefs: r.get(2)?,
+                range: r.get(3)?,
+                total_ms: r.get(4)?,
+                errors: r.get(5)?,
+            })
+        })
+        .map_err(err)?
+        .collect::<rusqlite::Result<_>>()
+        .map_err(err)
+    }
+
+    pub fn save_study_session(&self, s: &StudySession) -> Result<StudySession> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO study_sessions (kind, started_at, duration_ms) VALUES (?1, ?2, ?3)",
+            params![s.kind, s.started_at, s.duration_ms.max(0)],
+        )
+        .map_err(err)?;
+        Ok(StudySession {
+            id: conn.last_insert_rowid(),
+            ..s.clone()
+        })
+    }
+
+    /// Sessões de estudo desde `since` (ms), da mais recente para a mais antiga.
+    pub fn study_sessions(&self, since: i64) -> Result<Vec<StudySession>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, kind, started_at, duration_ms FROM study_sessions
+                 WHERE started_at >= ?1 ORDER BY started_at DESC, id DESC",
+            )
+            .map_err(err)?;
+        stmt.query_map([since], |r| {
+            Ok(StudySession {
+                id: r.get(0)?,
+                kind: r.get(1)?,
+                started_at: r.get(2)?,
+                duration_ms: r.get(3)?,
+            })
+        })
+        .map_err(err)?
+        .collect::<rusqlite::Result<_>>()
+        .map_err(err)
+    }
+
     /// Execuções da música, da mais recente para a mais antiga.
     pub fn attempts(&self, song_id: i64) -> Result<Vec<Attempt>> {
         self.query_attempts("song_id = ?1", song_id)
@@ -1083,6 +1202,37 @@ mod tests {
         let json = serde_json::to_value(&cards[0]).unwrap();
         assert_eq!(json["box"], 5);
         assert_eq!(json["totalMs"], 1500);
+    }
+
+    #[test]
+    fn reading_tests_and_study_sessions_round_trip() {
+        let (_dir, lib, _src) = setup();
+        let t = ReadingTest {
+            id: 0,
+            taken_at: 100,
+            clefs: "both".into(),
+            range: "staff".into(),
+            total_ms: 38_000,
+            errors: 2,
+        };
+        let saved = lib.save_reading_test(&t).unwrap();
+        assert!(saved.id > 0);
+        lib.save_reading_test(&ReadingTest { taken_at: 50, ..t.clone() }).unwrap();
+        let tests = lib.reading_tests(60).unwrap();
+        assert_eq!(tests, vec![saved]);
+
+        let s = StudySession {
+            id: 0,
+            kind: "reading".into(),
+            started_at: 200,
+            duration_ms: 90_000,
+        };
+        lib.save_study_session(&s).unwrap();
+        let list = lib.study_sessions(0).unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].kind, "reading");
+        let json = serde_json::to_value(&list[0]).unwrap();
+        assert_eq!(json["durationMs"], 90_000);
     }
 
     #[test]

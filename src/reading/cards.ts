@@ -74,7 +74,7 @@ export function staffStep(card: Card): number {
   return letterOctave * 7 + letter - BOTTOM_LINE[card.clef];
 }
 
-/** Nome em português, com a oitava como a Yamaha: o dó central é "Dó3". */
+/** Nome em português, com a oitava na convenção escolhida (padrão Yamaha: dó central = "Dó3"). */
 export function noteName(card: Card): string {
   const pc = card.key % 12;
   const octave = octaveName(card.key);

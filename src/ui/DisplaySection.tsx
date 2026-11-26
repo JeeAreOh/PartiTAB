@@ -1,11 +1,27 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { getOctaveNaming, setOctaveNaming, type OctaveNaming } from "../octave";
 import { Icon } from "./Icon";
 import type { Fullscreen } from "./useFullscreen";
 import { THEMES, type ThemeControl } from "./theme";
 
 /** Seção "Tela" dos ajustes: tela cheia e em qual monitor. */
-export function DisplaySection({ screen, theme }: { screen: Fullscreen; theme: ThemeControl }) {
+export function DisplaySection({
+  screen,
+  theme,
+  onOctaveNaming,
+}: {
+  screen: Fullscreen;
+  theme: ThemeControl;
+  /** Avisa o app para redesenhar os nomes das notas. */
+  onOctaveNaming?: (value: OctaveNaming) => void;
+}) {
   const { monitors, selected, fullscreen, current, refresh } = screen;
+  const [naming, setNaming] = useState(getOctaveNaming);
+  const changeNaming = (value: OctaveNaming) => {
+    setOctaveNaming(value);
+    setNaming(value);
+    onOctaveNaming?.(value);
+  };
 
   // Monitores podem ter sido ligados ou desligados desde a abertura.
   useEffect(() => {
@@ -33,6 +49,34 @@ export function DisplaySection({ screen, theme }: { screen: Fullscreen; theme: T
             </button>
           ))}
         </div>
+      </div>
+      <div className="field">
+        <span className="muted small">Nome das oitavas</span>
+        <div className="segmented" role="radiogroup" aria-label="Nome das oitavas">
+          {(
+            [
+              ["yamaha", "Yamaha"],
+              ["scientific", "Científica"],
+            ] as const
+          ).map(([v, label]) => (
+            <button
+              key={v}
+              role="radio"
+              aria-checked={naming === v}
+              className={naming === v ? "on" : ""}
+              onClick={() => changeNaming(v)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <span className="muted small">
+          O dó central se chama{" "}
+          {naming === "yamaha"
+            ? "Dó3 (C3), como no painel da Yamaha"
+            : "Dó4 (C4), como nos métodos Alfred e ABRSM"}
+          .
+        </span>
       </div>
       {monitors.length > 1 ? (
         <label className="field">

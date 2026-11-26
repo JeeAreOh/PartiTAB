@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, type Attempt, type Song } from "../api";
+import { api, type Attempt, type Song, type StudySession } from "../api";
 import { Cover } from "../library/Cover";
 import { formatMinutes, summarize, type DayTotal } from "./summary";
 
@@ -27,18 +27,19 @@ interface Props {
 /** Painel de progresso: tempo praticado, meta diária, sequência e evolução. */
 export function Progress({ songs, version, onOpenSong }: Props) {
   const [attempts, setAttempts] = useState<Attempt[] | null>(null);
+  const [study, setStudy] = useState<StudySession[]>([]);
   const [goal, setGoal] = useState(readGoal);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api.library
-      .allAttempts(Date.now() - HISTORY_DAYS * 86_400_000)
-      .then(setAttempts, (e) => setError(String(e)));
+    const since = Date.now() - HISTORY_DAYS * 86_400_000;
+    api.library.allAttempts(since).then(setAttempts, (e) => setError(String(e)));
+    api.study.list(since).then(setStudy, () => setStudy([]));
   }, [version]);
 
   const summary = useMemo(
-    () => (attempts ? summarize(attempts, songs, Date.now()) : null),
-    [attempts, songs],
+    () => (attempts ? summarize(attempts, songs, Date.now(), 30, study) : null),
+    [attempts, songs, study],
   );
 
   const changeGoal = (value: number) => {
@@ -64,7 +65,7 @@ export function Progress({ songs, version, onOpenSong }: Props) {
     );
 
   const done = Math.min(1, summary.today.minutes / goal);
-  const empty = summary.periodSessions === 0;
+  const empty = summary.days.every((d) => d.sessions === 0);
 
   return (
     <div className="progress-page">
@@ -111,7 +112,7 @@ export function Progress({ songs, version, onOpenSong }: Props) {
         <div className="stat-tile">
           <span className="label">Últimos 7 dias</span>
           <b>{formatMinutes(summary.weekMinutes)}</b>
-          <span className="muted small">de prática com correção</span>
+          <span className="muted small">de prática e estudo</span>
         </div>
         <div className="stat-tile">
           <span className="label">Precisão (30 dias)</span>
@@ -124,8 +125,8 @@ export function Progress({ songs, version, onOpenSong }: Props) {
         <h3>Minutos por dia</h3>
         {empty ? (
           <p className="muted">
-            Nenhuma prática nos últimos 30 dias. Use os modos Esperar ou Tocar junto: cada prática
-            entra aqui.
+            Nenhuma prática nos últimos 30 dias. Use os modos Esperar ou Tocar junto, ou treine na
+            aba Leitura: cada prática entra aqui.
           </p>
         ) : (
           <DaysChart days={summary.days} goal={goal} />
@@ -166,8 +167,11 @@ export function Progress({ songs, version, onOpenSong }: Props) {
         )}
       </section>
       <p className="muted small">
-        Só contam as práticas com correção (Esperar e Tocar junto). Práticas gravadas antes desta
-        versão entram na sequência, mas sem minutos.
+        Contam as práticas com correção (Esperar e Tocar junto) e o tempo ativo na aba Leitura
+        {summary.periodStudyMinutes > 0
+          ? ` (${formatMinutes(summary.periodStudyMinutes)} de estudo nos últimos 30 dias)`
+          : ""}
+        . Práticas gravadas antes da versão 0.2.0 entram na sequência, mas sem minutos.
       </p>
     </div>
   );
@@ -208,7 +212,10 @@ function DaysChart({ days, goal }: { days: DayTotal[]; goal: number }) {
   const y = (m: number) => PAD.top + plotH - (m / max) * plotH;
   const ticks = [0, Math.round(max / 2), Math.round(max)];
   const label = (d: DayTotal) =>
-    new Date(d.start).toLocaleDateString("pt-BR", { day: "numeric", month: "short" });
+    new Date(d.start).toLocaleDateString("pt-BR", {
+      day: "numeric",
+      month: "short",
+    });
   const active = hover !== null ? days[hover] : null;
 
   return (
@@ -286,6 +293,7 @@ function DaysChart({ days, goal }: { days: DayTotal[]; goal: number }) {
           </div>
           <span>
             {label(active)} · {active.sessions} {active.sessions === 1 ? "prática" : "práticas"}
+            {active.studyMinutes > 0 ? ` · ${formatMinutes(active.studyMinutes)} de estudo` : ""}
           </span>
         </div>
       )}

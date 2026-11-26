@@ -1,3 +1,4 @@
+import { getOctaveNaming } from "./octave";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { api, type Song, type Status } from "./api";
@@ -139,6 +140,8 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  // Muda ao trocar a convenção das oitavas, para redesenhar os nomes das notas.
+  const [, setOctaveNaming] = useState(getOctaveNaming);
   // F1 abre a ajuda de qualquer tela.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -514,9 +517,14 @@ function App() {
     run(async () => {
       const title = exerciseTitle(ex);
       const data = new TextEncoder().encode(exerciseXml(ex));
-      const song = await library.importBytes(`${title}.musicxml`, data, title, TECHNIQUE_ARTIST);
-      if (song.style !== TECHNIQUE_ARTIST) {
-        await library.update(song.id, { style: TECHNIQUE_ARTIST });
+      let song = await library.importBytes(`${title}.musicxml`, data, title, TECHNIQUE_ARTIST);
+      const prefs = parsePrefs(song);
+      if (song.style !== TECHNIQUE_ARTIST || JSON.stringify(prefs.exercise) !== JSON.stringify(ex)) {
+        song =
+          (await library.update(song.id, {
+            style: TECHNIQUE_ARTIST,
+            prefs: JSON.stringify({ ...prefs, exercise: ex }),
+          })) ?? song;
       }
       await openSong(song);
     });
@@ -1642,7 +1650,11 @@ function App() {
 
         {view === "reading" && (
           <div className="layer">
-            <ReadingTrainer registerNoteHandler={registerReading} onError={setError} />
+            <ReadingTrainer
+              registerNoteHandler={registerReading}
+              onError={setError}
+              onStudySaved={() => setPracticeVersion((v) => v + 1)}
+            />
           </div>
         )}
 
@@ -1651,6 +1663,7 @@ function App() {
             <Technique
               songs={library.songs}
               busy={busy}
+              version={practiceVersion}
               onPractice={practiceExercise}
               onOpenSong={(song) => run(() => openSong(song))}
             />
@@ -1726,6 +1739,7 @@ function App() {
           theme={theme}
           onClose={() => setShowSettings(false)}
           updates={updates}
+          onOctaveNaming={setOctaveNaming}
         />
       )}
     </div>

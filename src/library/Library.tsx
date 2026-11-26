@@ -22,7 +22,7 @@ interface Props {
   onOpen: (song: Song) => void;
   onImport: () => void;
   onSearch: () => void;
-  onUpdate: (id: number, patch: SongPatch) => Promise<void>;
+  onUpdate: (id: number, patch: SongPatch) => Promise<unknown>;
   onRemove: (id: number) => Promise<void>;
   /** Música alterada fora do patch (ex.: capa nova). */
   onSongChanged: (song: Song) => void;
@@ -431,7 +431,7 @@ interface DetailsProps {
   busy: boolean;
   onOpen: () => void;
   onClose: () => void;
-  onUpdate: (patch: SongPatch) => Promise<void>;
+  onUpdate: (patch: SongPatch) => Promise<unknown>;
   onRemove: () => void;
   onSongChanged: (song: Song) => void;
   onError: (message: string) => void;

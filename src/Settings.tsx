@@ -35,6 +35,7 @@ interface Props {
   theme: ThemeControl;
   onClose: () => void;
   updates: Updates;
+  onOctaveNaming?: (value: import("./octave").OctaveNaming) => void;
 }
 
 /** Gaveta de ajustes: teclado MIDI e som. */
@@ -139,7 +140,7 @@ export function Settings(p: Props) {
           onDownload={p.onDownloadSoundfont}
         />
 
-        <DisplaySection screen={p.screen} theme={p.theme} />
+        <DisplaySection screen={p.screen} theme={p.theme} onOctaveNaming={p.onOctaveNaming} />
 
         <LatencySection latency={p.latency} onChange={p.onLatency} registerTap={p.registerTap} />
 

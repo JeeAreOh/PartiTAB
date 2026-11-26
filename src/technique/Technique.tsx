@@ -1,5 +1,7 @@
-import { useState } from "react";
-import type { Song } from "../api";
+import { useEffect, useMemo, useState } from "react";
+import { api, type Attempt, type Song } from "../api";
+import { parsePrefs } from "../library/useLibrary";
+import { cleanBpm, suggestFaster } from "./cleanTempo";
 import {
   exerciseTitle,
   keyName,
@@ -54,26 +56,57 @@ const FIGURES: [Figure, string][] = [
 
 /** Sugestão de estudo: um caminho do mais fácil ao mais difícil. */
 const PATH: { label: string; ex: Partial<Exercise> }[] = [
-  { label: "Dó maior, mão direita", ex: { kind: "scale", tonic: 0, mode: "major", hands: "right" } },
-  { label: "Dó maior, mão esquerda", ex: { kind: "scale", tonic: 0, mode: "major", hands: "left" } },
-  { label: "Dó maior, mãos juntas", ex: { kind: "scale", tonic: 0, mode: "major", hands: "both" } },
-  { label: "Arpejo de Dó maior", ex: { kind: "arpeggio", tonic: 0, mode: "major", hands: "right" } },
-  { label: "Cadência em Dó maior", ex: { kind: "cadence", tonic: 0, mode: "major", hands: "both" } },
-  { label: "Sol maior, mãos juntas", ex: { kind: "scale", tonic: 7, mode: "major", hands: "both" } },
-  { label: "Lá menor harmônica", ex: { kind: "scale", tonic: 9, mode: "harmonic", hands: "both" } },
-  { label: "Fá maior, mãos juntas", ex: { kind: "scale", tonic: 5, mode: "major", hands: "both" } },
+  {
+    label: "Dó maior, mão direita",
+    ex: { kind: "scale", tonic: 0, mode: "major", hands: "right" },
+  },
+  {
+    label: "Dó maior, mão esquerda",
+    ex: { kind: "scale", tonic: 0, mode: "major", hands: "left" },
+  },
+  {
+    label: "Dó maior, mãos juntas",
+    ex: { kind: "scale", tonic: 0, mode: "major", hands: "both" },
+  },
+  {
+    label: "Arpejo de Dó maior",
+    ex: { kind: "arpeggio", tonic: 0, mode: "major", hands: "right" },
+  },
+  {
+    label: "Cadência em Dó maior",
+    ex: { kind: "cadence", tonic: 0, mode: "major", hands: "both" },
+  },
+  {
+    label: "Sol maior, mãos juntas",
+    ex: { kind: "scale", tonic: 7, mode: "major", hands: "both" },
+  },
+  {
+    label: "Lá menor harmônica",
+    ex: { kind: "scale", tonic: 9, mode: "harmonic", hands: "both" },
+  },
+  {
+    label: "Fá maior, mãos juntas",
+    ex: { kind: "scale", tonic: 5, mode: "major", hands: "both" },
+  },
 ];
 
 interface Props {
   songs: Song[];
   busy: boolean;
+  /** Muda quando há prática nova (para recarregar os andamentos). */
+  version?: number;
   onPractice: (ex: Exercise) => void;
   onOpenSong: (song: Song) => void;
 }
 
 /** Aba Técnica: escalas, arpejos e cadências em qualquer tonalidade. */
-export function Technique({ songs, busy, onPractice, onOpenSong }: Props) {
+export function Technique({ songs, busy, version, onPractice, onOpenSong }: Props) {
   const [ex, setEx] = useState(readExercise);
+  const [attempts, setAttempts] = useState<Attempt[]>([]);
+
+  useEffect(() => {
+    api.library.allAttempts(0).then(setAttempts, () => setAttempts([]));
+  }, [version]);
 
   const change = (patch: Partial<Exercise>) => {
     setEx((current) => {
@@ -91,6 +124,27 @@ export function Technique({ songs, busy, onPractice, onOpenSong }: Props) {
   const done = songs
     .filter((s) => s.artist === TECHNIQUE_ARTIST)
     .sort((a, b) => (b.lastPlayedAt ?? b.addedAt) - (a.lastPlayedAt ?? a.addedAt));
+
+  // Andamento limpo e sugestão de subir o andamento, por exercício.
+  const tempos = useMemo(() => {
+    const bySong = new Map<number, Attempt[]>();
+    for (const a of attempts) bySong.set(a.songId, [...(bySong.get(a.songId) ?? []), a]);
+    const out = new Map<
+      number,
+      { exercise: Exercise; clean: number | null; faster: number | null }
+    >();
+    for (const s of done) {
+      const exercise = parsePrefs(s).exercise;
+      if (!exercise) continue;
+      const list = bySong.get(s.id) ?? [];
+      out.set(s.id, {
+        exercise,
+        clean: cleanBpm(list, exercise),
+        faster: suggestFaster(list, exercise),
+      });
+    }
+    return out;
+  }, [attempts, done]);
 
   return (
     <div className="progress-page technique-page">
@@ -150,7 +204,11 @@ export function Technique({ songs, busy, onPractice, onOpenSong }: Props) {
             </div>
             <div className="field">
               <span className="label">Figura</span>
-              <Segmented options={FIGURES} value={ex.figure} onChange={(figure) => change({ figure })} />
+              <Segmented
+                options={FIGURES}
+                value={ex.figure}
+                onChange={(figure) => change({ figure })}
+              />
             </div>
           </>
         )}
@@ -201,24 +259,44 @@ export function Technique({ songs, busy, onPractice, onOpenSong }: Props) {
       <section className="progress-card">
         <h3>Seus exercícios</h3>
         {done.length === 0 ? (
-          <p className="muted">Os exercícios que você praticar aparecem aqui, com a melhor nota.</p>
+          <p className="muted">
+            Os exercícios que você praticar aparecem aqui, com a melhor nota e o andamento limpo (o
+            mais rápido tocado em Tocar junto com 95% de precisão ou mais).
+          </p>
         ) : (
           <ul className="technique-list">
-            {done.map((s) => (
-              <li key={s.id}>
-                <button className="improved-row" onClick={() => onOpenSong(s)}>
-                  <span className="improved-title">
-                    <b>{s.title}</b>
-                    <span className="muted small">
-                      {s.plays} {s.plays === 1 ? "prática" : "práticas"}
+            {done.map((s) => {
+              const t = tempos.get(s.id);
+              return (
+                <li key={s.id}>
+                  <button className="improved-row" onClick={() => onOpenSong(s)}>
+                    <span className="improved-title">
+                      <b>{s.title}</b>
+                      <span className="muted small">
+                        {t ? `${t.exercise.bpm} bpm · ` : ""}
+                        {s.plays} {s.plays === 1 ? "prática" : "práticas"}
+                        {t?.clean ? ` · andamento limpo ${t.clean} bpm` : ""}
+                      </span>
                     </span>
-                  </span>
-                  <span className="improved-score">
-                    {s.bestScore === null ? "—" : <b>{s.bestScore}</b>}
-                  </span>
-                </button>
-              </li>
-            ))}
+                    <span className="improved-score">
+                      {s.bestScore === null ? "—" : <b>{s.bestScore}</b>}
+                    </span>
+                  </button>
+                  {t?.faster && (
+                    <div className="technique-faster">
+                      <span className="small">3 execuções limpas seguidas.</span>
+                      <button
+                        className="primary small"
+                        disabled={busy}
+                        onClick={() => onPractice({ ...t.exercise, bpm: t.faster! })}
+                      >
+                        Subir para {t.faster} bpm?
+                      </button>
+                    </div>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>

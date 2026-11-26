@@ -2,6 +2,13 @@
 
 As versões e os instaladores ficam na [página de versões](https://github.com/JeeAreOh/PartiTAB/releases).
 
+## 0.5.0 — 26/11/2026
+
+- **Teste das 20 notas** na aba Leitura: cronômetro, erros, melhor tempo e os últimos 10 testes.
+- O tempo na aba Leitura conta no Progresso (minutos, meta diária e dias seguidos).
+- **Andamento limpo** em cada exercício de técnica e sugestão de subir +4 bpm depois de 3 execuções limpas seguidas.
+- **Nome das oitavas** em Ajustes → Tela: Yamaha (dó central = Dó3) ou científica (Dó4).
+
 ## 0.4.1 — 31/10/2026
 
 - Sem token do GitHub: a opção saiu dos ajustes e o token salvo por versões antigas é apagado.

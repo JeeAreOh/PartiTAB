@@ -1,4 +1,4 @@
-import type { Attempt, Song } from "../api";
+import type { Attempt, Song, StudySession } from "../api";
 
 /** Dia local (AAAA-MM-DD) de um instante. */
 export function dayKey(ms: number): string {
@@ -20,7 +20,10 @@ export interface DayTotal {
   /** Início do dia (ms), para rótulos. */
   start: number;
   minutes: number;
+  /** Práticas de música mais sessões de estudo (leitura, ritmo...). */
   sessions: number;
+  /** Desses minutos, quantos foram de estudo fora das músicas. */
+  studyMinutes: number;
 }
 
 export interface Improvement {
@@ -39,6 +42,8 @@ export interface Summary {
   days: DayTotal[];
   weekMinutes: number;
   periodMinutes: number;
+  /** Minutos de estudo fora das músicas no período. */
+  periodStudyMinutes: number;
   periodSessions: number;
   /** Precisão média no período (null sem práticas). */
   accuracy: number | null;
@@ -50,18 +55,38 @@ const minutes = (ms: number) => ms / 60_000;
 /**
  * Resume as práticas: minutos por dia, sequência de dias, semana, precisão e
  * as músicas que mais evoluíram (primeira nota do período → melhor nota).
+ * As sessões de estudo (leitura, ritmo, padrões) somam aos minutos, aos dias
+ * seguidos e à meta.
  */
-export function summarize(attempts: Attempt[], songs: Song[], now: number, days = 30): Summary {
-  const byDay = new Map<string, { ms: number; sessions: number }>();
-  for (const a of attempts) {
-    const key = dayKey(a.playedAt ?? 0);
-    const d = byDay.get(key) ?? { ms: 0, sessions: 0 };
-    byDay.set(key, { ms: d.ms + (a.durationMs ?? 0), sessions: d.sessions + 1 });
-  }
+export function summarize(
+  attempts: Attempt[],
+  songs: Song[],
+  now: number,
+  days = 30,
+  study: StudySession[] = [],
+): Summary {
+  const byDay = new Map<string, { ms: number; sessions: number; studyMs: number }>();
+  const add = (at: number, ms: number, isStudy: boolean) => {
+    const key = dayKey(at);
+    const d = byDay.get(key) ?? { ms: 0, sessions: 0, studyMs: 0 };
+    byDay.set(key, {
+      ms: d.ms + ms,
+      sessions: d.sessions + 1,
+      studyMs: d.studyMs + (isStudy ? ms : 0),
+    });
+  };
+  for (const a of attempts) add(a.playedAt ?? 0, a.durationMs ?? 0, false);
+  for (const s of study) add(s.startedAt, s.durationMs, true);
   const totalOf = (start: number): DayTotal => {
     const date = dayKey(start);
     const d = byDay.get(date);
-    return { date, start, minutes: d ? minutes(d.ms) : 0, sessions: d?.sessions ?? 0 };
+    return {
+      date,
+      start,
+      minutes: d ? minutes(d.ms) : 0,
+      sessions: d?.sessions ?? 0,
+      studyMinutes: d ? minutes(d.studyMs) : 0,
+    };
   };
 
   const list = Array.from({ length: days }, (_, i) => totalOf(startOfDay(now, i - days + 1)));
@@ -80,7 +105,8 @@ export function summarize(attempts: Attempt[], songs: Song[], now: number, days 
   const weekMinutes = minutes(
     attempts
       .filter((a) => (a.playedAt ?? 0) >= weekStart)
-      .reduce((sum, a) => sum + (a.durationMs ?? 0), 0),
+      .reduce((sum, a) => sum + (a.durationMs ?? 0), 0) +
+      study.filter((s) => s.startedAt >= weekStart).reduce((sum, s) => sum + s.durationMs, 0),
   );
 
   const songsById = new Map(songs.map((s) => [s.id, s]));
@@ -94,7 +120,13 @@ export function summarize(attempts: Attempt[], songs: Song[], now: number, days 
     const first = sorted[0].score;
     const best = Math.max(...sorted.slice(1).map((a) => a.score));
     if (best > first)
-      improved.push({ song, first, best, delta: best - first, sessions: list.length });
+      improved.push({
+        song,
+        first,
+        best,
+        delta: best - first,
+        sessions: list.length,
+      });
   }
   improved.sort((a, b) => b.delta - a.delta || b.best - a.best);
 
@@ -104,6 +136,7 @@ export function summarize(attempts: Attempt[], songs: Song[], now: number, days 
     days: list,
     weekMinutes,
     periodMinutes: list.reduce((s, d) => s + d.minutes, 0),
+    periodStudyMinutes: list.reduce((s, d) => s + d.studyMinutes, 0),
     periodSessions: inPeriod.length,
     accuracy: inPeriod.length
       ? Math.round(inPeriod.reduce((s, a) => s + a.accuracy, 0) / inPeriod.length)

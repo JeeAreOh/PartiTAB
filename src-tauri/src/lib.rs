@@ -15,7 +15,10 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, RunEvent, State};
 
 use audio::{AudioCommand, AudioEngine, AudioInfo};
-use library::{Attempt, CollectionResult, ErrorMap, Library, ReadingCard, Song, SongPatch};
+use library::{
+    Attempt, CollectionResult, ErrorMap, Library, ReadingCard, ReadingTest, Song, SongPatch,
+    StudySession,
+};
 use midi::{MidiSession, SynthMessage};
 use sounds::{CatalogItem, PresetInfo, SoundSettings, VelocityCurve};
 
@@ -505,6 +508,29 @@ fn reading_save(lib: State<LibraryState>, card: ReadingCard) -> Result<(), Strin
     lib.get()?.save_reading_card(&card)
 }
 
+#[tauri::command]
+fn reading_test_save(lib: State<LibraryState>, test: ReadingTest) -> Result<ReadingTest, String> {
+    lib.get()?.save_reading_test(&test)
+}
+
+#[tauri::command]
+fn reading_tests(lib: State<LibraryState>, since: i64) -> Result<Vec<ReadingTest>, String> {
+    lib.get()?.reading_tests(since)
+}
+
+#[tauri::command]
+fn study_session_save(
+    lib: State<LibraryState>,
+    session: StudySession,
+) -> Result<StudySession, String> {
+    lib.get()?.save_study_session(&session)
+}
+
+#[tauri::command]
+fn study_sessions(lib: State<LibraryState>, since: i64) -> Result<Vec<StudySession>, String> {
+    lib.get()?.study_sessions(since)
+}
+
 /// Baixa um link direto de partitura (colado na aba Buscar) para a biblioteca.
 #[tauri::command]
 async fn search_import_url(app: AppHandle, url: String) -> Result<Song, String> {
@@ -654,6 +680,10 @@ pub fn run() {
             library_remove_cover,
             reading_cards,
             reading_save,
+            reading_test_save,
+            reading_tests,
+            study_session_save,
+            study_sessions,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

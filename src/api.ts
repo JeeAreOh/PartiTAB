@@ -141,6 +141,24 @@ export interface ErrorMap {
   keys: { key: number; notes: number; errors: number }[];
 }
 
+export interface ReadingTestResult {
+  id?: number;
+  takenAt: number;
+  clefs: "treble" | "bass" | "both";
+  range: "staff" | "ledger";
+  totalMs: number;
+  errors: number;
+}
+
+export type StudyKind = "reading" | "reading_test" | "sight_reading" | "patterns" | "rhythm";
+
+export interface StudySession {
+  id?: number;
+  kind: StudyKind;
+  startedAt: number;
+  durationMs: number;
+}
+
 export interface UpdateStatus {
   version: string;
   repo: string;
@@ -237,6 +255,15 @@ export const api = {
   reading: {
     list: () => invoke<import("./reading/cards").CardState[]>("reading_cards"),
     save: (card: import("./reading/cards").CardState) => invoke<void>("reading_save", { card }),
+    saveTest: (test: ReadingTestResult) =>
+      invoke<ReadingTestResult>("reading_test_save", { test }),
+    /** Testes das 20 notas desde `since` (ms), do mais recente ao mais antigo. */
+    tests: (since = 0) => invoke<ReadingTestResult[]>("reading_tests", { since }),
+  },
+  study: {
+    save: (session: StudySession) => invoke<StudySession>("study_session_save", { session }),
+    /** Sessões de estudo desde `since` (ms). */
+    list: (since: number) => invoke<StudySession[]>("study_sessions", { since }),
   },
   onKey: (handler: (e: KeyEvent) => void): Promise<UnlistenFn> =>
     listen<KeyEvent>("key", (e) => handler(e.payload)),

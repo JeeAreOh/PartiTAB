@@ -16,8 +16,11 @@ import {
   type Range,
 } from "./cards";
 import { NoteCard } from "./NoteCard";
+import { NoteTest } from "./NoteTest";
+import { useStudyTimer } from "../progress/studyTimer";
 
 const SESSION = 20;
+export type { Props as ReadingProps };
 const SETTINGS_KEY = "partitab.reading";
 
 interface Settings {
@@ -36,7 +39,10 @@ const DEFAULTS: Settings = {
 
 function loadSettings(): Settings {
   try {
-    return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? "{}") };
+    return {
+      ...DEFAULTS,
+      ...JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? "{}"),
+    };
   } catch {
     return DEFAULTS;
   }
@@ -46,6 +52,8 @@ interface Props {
   /** O app entrega aqui as notas do teclado MIDI enquanto esta tela está aberta. */
   registerNoteHandler: (handler: ((key: number) => void) | null) => void;
   onError: (message: string) => void;
+  /** Uma sessão de estudo foi gravada (o Progresso recarrega). */
+  onStudySaved?: () => void;
 }
 
 interface Result {
@@ -54,115 +62,62 @@ interface Result {
   ms: number;
 }
 
-export function ReadingTrainer({ registerNoteHandler, onError }: Props) {
+type Mode = "training" | "test";
+const MODE_KEY = "partitab.readingMode";
+
+/** Aba Leitura: treino com repetição espaçada e o teste das 20 notas. */
+export function ReadingTrainer({ registerNoteHandler, onError, onStudySaved }: Props) {
   const [settings, setSettings] = useState<Settings>(loadSettings);
-  const [states, setStates] = useState(new Map<string, CardState>());
-  const [card, setCard] = useState<Card | null>(null);
-  const [shownAt, setShownAt] = useState(0);
-  const [results, setResults] = useState<Result[]>([]);
-  const [feedback, setFeedback] = useState<{ kind: "good" | "bad"; text: string } | null>(null);
-  const [pressed, setPressed] = useState(new Map<number, number>());
-  const locked = useRef(false);
-  // Estado mais recente (respostas seguidas não podem partir de uma cópia velha).
-  const statesRef = useRef(states);
-  statesRef.current = states;
+  const [mode, setMode] = useState<Mode>(() => {
+    try {
+      return localStorage.getItem(MODE_KEY) === "test" ? "test" : "training";
+    } catch {
+      return "training";
+    }
+  });
 
   useEffect(() => {
     try {
       localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+      localStorage.setItem(MODE_KEY, mode);
     } catch {
       /* só perde a preferência */
     }
-  }, [settings]);
-
-  useEffect(() => {
-    api.reading
-      .list()
-      .then((list) => setStates(new Map(list.map((c) => [cardId(c.clef, c.key), c]))))
-      .catch(() => undefined);
-  }, []);
-
-  const candidates = useMemo(() => {
-    const clefs: Clef[] = settings.clefs === "both" ? ["treble", "bass"] : [settings.clefs];
-    return clefs.flatMap((clef) =>
-      pool(clef, settings.range, settings.accidentals).map((key) => ({ clef, key })),
-    );
-  }, [settings.clefs, settings.range, settings.accidentals]);
-
-  const next = useCallback(
-    (previous: string | null) => {
-      setCard(pickNext(candidates, states, previous));
-      setShownAt(performance.now());
-      setFeedback(null);
-      locked.current = false;
-    },
-    [candidates, states],
-  );
-
-  // Trocar as opções recomeça a sessão.
-  useEffect(() => {
-    setResults([]);
-    next(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [candidates]);
-
-  const done = results.length >= SESSION;
-
-  const respond = useCallback(
-    (key: number) => {
-      if (!card || locked.current || done) return;
-      locked.current = true;
-      const ms = Math.round(performance.now() - shownAt);
-      const correct = key === card.key;
-      const id = cardId(card.clef, card.key);
-      const updated = answer(
-        statesRef.current.get(id) ?? newState(card.clef, card.key),
-        correct,
-        ms,
-      );
-      statesRef.current = new Map(statesRef.current).set(id, updated);
-      setStates(statesRef.current);
-      api.reading.save(updated).catch((e) => onError(String(e)));
-      setResults((r) => [...r, { card, correct, ms }]);
-      setFeedback(
-        correct
-          ? { kind: "good", text: ms <= FAST_MS ? "Certo!" : "Certo, mas devagar" }
-          : {
-              kind: "bad",
-              text: wrongOctave(card, key)
-                ? `Oitava errada: era ${noteName(card)}`
-                : `Era ${noteName(card)}`,
-            },
-      );
-      window.setTimeout(() => next(id), correct ? 450 : 1400);
-    },
-    [card, shownAt, done, next, onError],
-  );
-
-  const respondRef = useRef(respond);
-  respondRef.current = respond;
-  useEffect(() => {
-    registerNoteHandler((key) => respondRef.current(key));
-    return () => registerNoteHandler(null);
-  }, [registerNoteHandler]);
+  }, [settings, mode]);
 
   const set = <K extends keyof Settings>(key: K, value: Settings[K]) =>
     setSettings((s) => ({ ...s, [key]: value }));
 
-  const correctCount = results.filter((r) => r.correct).length;
-  const avgMs = results.length ? results.reduce((a, r) => a + r.ms, 0) / results.length : 0;
-
-  // Notas mais difíceis do conjunto atual (histórico salvo): com erros ou lentas.
-  const accuracyOf = (s: CardState) => s.correct / s.seen;
-  const avgOf = (s: CardState) => s.totalMs / s.seen;
-  const hardest = candidates
-    .map((c) => states.get(cardId(c.clef, c.key)))
-    .filter((s): s is CardState => !!s && s.seen > 0 && (accuracyOf(s) < 1 || avgOf(s) > FAST_MS))
-    .sort((a, b) => accuracyOf(a) - accuracyOf(b) || avgOf(b) - avgOf(a))
-    .slice(0, 6);
+  const candidates = useMemo(() => {
+    const clefs: Clef[] = settings.clefs === "both" ? ["treble", "bass"] : [settings.clefs];
+    return clefs.flatMap((clef) =>
+      pool(clef, settings.range, settings.accidentals && mode === "training").map((key) => ({
+        clef,
+        key,
+      })),
+    );
+  }, [settings.clefs, settings.range, settings.accidentals, mode]);
 
   return (
     <section className="reading">
+      <div className="segmented reading-modes" role="tablist" aria-label="Tipo de treino">
+        {(
+          [
+            ["training", "Treino de notas"],
+            ["test", "Teste das 20 notas"],
+          ] as const
+        ).map(([v, label]) => (
+          <button
+            key={v}
+            role="tab"
+            aria-selected={mode === v}
+            className={mode === v ? "on" : ""}
+            onClick={() => setMode(v)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
       <div className="reading-options">
         <div className="segmented" role="group" aria-label="Clave">
           {(
@@ -197,14 +152,16 @@ export function ReadingTrainer({ registerNoteHandler, onError }: Props) {
             </button>
           ))}
         </div>
-        <label className="toggle">
-          <input
-            type="checkbox"
-            checked={settings.accidentals}
-            onChange={(e) => set("accidentals", e.target.checked)}
-          />
-          Sustenidos e bemóis
-        </label>
+        {mode === "training" && (
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={settings.accidentals}
+              onChange={(e) => set("accidentals", e.target.checked)}
+            />
+            Sustenidos e bemóis
+          </label>
+        )}
         <label className="toggle">
           <input
             type="checkbox"
@@ -215,6 +172,142 @@ export function ReadingTrainer({ registerNoteHandler, onError }: Props) {
         </label>
       </div>
 
+      {mode === "training" ? (
+        <NoteTraining
+          registerNoteHandler={registerNoteHandler}
+          onError={onError}
+          onStudySaved={onStudySaved}
+          candidates={candidates}
+          hideKeyboard={settings.hideKeyboard}
+        />
+      ) : (
+        <NoteTest
+          registerNoteHandler={registerNoteHandler}
+          onError={onError}
+          onStudySaved={onStudySaved}
+          candidates={candidates}
+          clefs={settings.clefs}
+          range={settings.range}
+          hideKeyboard={settings.hideKeyboard}
+        />
+      )}
+    </section>
+  );
+}
+
+interface ModeProps extends Props {
+  candidates: { clef: Clef; key: number }[];
+  hideKeyboard: boolean;
+}
+
+function NoteTraining({
+  registerNoteHandler,
+  onError,
+  onStudySaved,
+  candidates,
+  hideKeyboard,
+}: ModeProps) {
+  const [states, setStates] = useState(new Map<string, CardState>());
+  const [card, setCard] = useState<Card | null>(null);
+  const [shownAt, setShownAt] = useState(0);
+  const [results, setResults] = useState<Result[]>([]);
+  const [feedback, setFeedback] = useState<{
+    kind: "good" | "bad";
+    text: string;
+  } | null>(null);
+  const [pressed, setPressed] = useState(new Map<number, number>());
+  const locked = useRef(false);
+  // Estado mais recente (respostas seguidas não podem partir de uma cópia velha).
+  const statesRef = useRef(states);
+  statesRef.current = states;
+
+  const study = useStudyTimer("reading", onStudySaved);
+
+  useEffect(() => {
+    api.reading
+      .list()
+      .then((list) => setStates(new Map(list.map((c) => [cardId(c.clef, c.key), c]))))
+      .catch(() => undefined);
+  }, []);
+
+  const next = useCallback(
+    (previous: string | null) => {
+      setCard(pickNext(candidates, states, previous));
+      setShownAt(performance.now());
+      setFeedback(null);
+      locked.current = false;
+    },
+    [candidates, states],
+  );
+
+  // Trocar as opções recomeça a sessão.
+  useEffect(() => {
+    setResults([]);
+    next(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [candidates]);
+
+  const done = results.length >= SESSION;
+
+  const respond = useCallback(
+    (key: number) => {
+      if (!card || locked.current || done) return;
+      locked.current = true;
+      study.touch();
+      const ms = Math.round(performance.now() - shownAt);
+      const correct = key === card.key;
+      const id = cardId(card.clef, card.key);
+      const updated = answer(
+        statesRef.current.get(id) ?? newState(card.clef, card.key),
+        correct,
+        ms,
+      );
+      statesRef.current = new Map(statesRef.current).set(id, updated);
+      setStates(statesRef.current);
+      api.reading.save(updated).catch((e) => onError(String(e)));
+      setResults((r) => {
+        if (r.length + 1 >= SESSION) study.flush();
+        return [...r, { card, correct, ms }];
+      });
+      setFeedback(
+        correct
+          ? {
+              kind: "good",
+              text: ms <= FAST_MS ? "Certo!" : "Certo, mas devagar",
+            }
+          : {
+              kind: "bad",
+              text: wrongOctave(card, key)
+                ? `Oitava errada: era ${noteName(card)}`
+                : `Era ${noteName(card)}`,
+            },
+      );
+      window.setTimeout(() => next(id), correct ? 450 : 1400);
+    },
+    [card, shownAt, done, next, onError, study],
+  );
+
+  const respondRef = useRef(respond);
+  respondRef.current = respond;
+  useEffect(() => {
+    registerNoteHandler((key) => respondRef.current(key));
+    return () => registerNoteHandler(null);
+  }, [registerNoteHandler]);
+
+  const correctCount = results.filter((r) => r.correct).length;
+  const avgMs = results.length ? results.reduce((a, r) => a + r.ms, 0) / results.length : 0;
+
+  // Notas mais difíceis do conjunto atual (histórico salvo): com erros ou lentas.
+  const accuracyOf = (s: CardState) => s.correct / s.seen;
+  const avgOf = (s: CardState) => s.totalMs / s.seen;
+  const hardest = candidates
+    .map((c) => states.get(cardId(c.clef, c.key)))
+    .filter((s): s is CardState => !!s && s.seen > 0 && (accuracyOf(s) < 1 || avgOf(s) > FAST_MS))
+    .sort((a, b) => accuracyOf(a) - accuracyOf(b) || avgOf(b) - avgOf(a))
+    .slice(0, 6);
+
+  return (
+    <>
       <div className="reading-main">
         <div className="reading-card">
           {done ? (
@@ -279,7 +372,7 @@ export function ReadingTrainer({ registerNoteHandler, onError }: Props) {
         </aside>
       </div>
 
-      {!settings.hideKeyboard && (
+      {!hideKeyboard && (
         <Keyboard
           pressed={pressed}
           expected={feedback?.kind === "bad" && card ? new Set([card.key]) : undefined}
@@ -294,6 +387,6 @@ export function ReadingTrainer({ registerNoteHandler, onError }: Props) {
           }}
         />
       )}
-    </section>
+    </>
   );
 }

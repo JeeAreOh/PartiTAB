@@ -16,6 +16,8 @@ export interface SongPrefs {
   video?: { id: string; sync: SyncPoint[] } | null;
   /** Seções criadas pelo aluno (compassos a partir de 0). */
   sections?: SongSection[];
+  /** Parâmetros do exercício (músicas criadas pela aba Técnica). */
+  exercise?: import("../technique/exercises").Exercise;
 }
 
 export function parsePrefs(song: Song | null): SongPrefs {
@@ -83,9 +85,12 @@ export function useLibrary(onError: (message: string) => void) {
   const update = useCallback(
     async (id: number, patch: SongPatch) => {
       try {
-        put(await api.library.update(id, patch));
+        const song = await api.library.update(id, patch);
+        put(song);
+        return song;
       } catch (e) {
         onError(String(e));
+        return undefined;
       }
     },
     [put, onError],

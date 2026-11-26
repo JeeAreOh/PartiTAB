@@ -22,7 +22,11 @@ describe("progresso", () => {
       [song(1), song(2)],
       now,
     );
-    expect(s.today).toMatchObject({ date: "2026-10-30", minutes: 15, sessions: 2 });
+    expect(s.today).toMatchObject({
+      date: "2026-10-30",
+      minutes: 15,
+      sessions: 2,
+    });
     expect(s.streak).toBe(3);
     expect(s.days).toHaveLength(30);
     expect(s.days[29].date).toBe("2026-10-30");
@@ -30,6 +34,22 @@ describe("progresso", () => {
     expect(s.weekMinutes).toBe(45);
     expect(s.periodSessions).toBe(5);
     expect(s.accuracy).toBe(50);
+  });
+
+  it("soma o estudo fora das músicas aos minutos e à sequência", () => {
+    const s = summarize([attempt(1, day(0), 50)], [song(1)], now, 30, [
+      { id: 1, kind: "reading", startedAt: day(0, 11), durationMs: 300_000 },
+      { id: 2, kind: "reading_test", startedAt: day(-1), durationMs: 60_000 },
+    ]);
+    expect(s.today).toMatchObject({
+      minutes: 15,
+      sessions: 2,
+      studyMinutes: 5,
+    });
+    expect(s.streak).toBe(2);
+    expect(s.weekMinutes).toBe(16);
+    expect(s.periodStudyMinutes).toBe(6);
+    expect(s.periodSessions).toBe(1);
   });
 
   it("sem prática hoje, a sequência conta até ontem", () => {
