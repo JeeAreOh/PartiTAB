@@ -49,7 +49,7 @@ src/
   help/                Ajuda (topics.tsx: o texto de cada tópico)
   library/             biblioteca (filtros, detalhes, capas, backup)
   midi/                MIDI → MusicXML (faixas, mãos, tercinas, swing); musicxml.ts escreve o MusicXML
-  plan/                aba Plano: currículo de 12 meses, calendário, sessão do dia, gates e métricas
+  plan/                aba Plano (calendar.ts: calendário e sessão do dia): currículo de 12 meses, calendário, sessão do dia, gates e métricas
   practice/            motor de prática, linha do tempo, trechos e rampa, mapa de erros,
                        calibração, gravação, dedilhado, notas caindo, seções, som pelo teclado
   progress/            painel de progresso

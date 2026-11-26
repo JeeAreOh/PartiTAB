@@ -2,7 +2,7 @@ import { getOctaveNaming } from "./octave";
 import { inLibrary } from "./library/filter";
 import { Plan, fullExercise } from "./plan/Plan";
 import { PlanTimer, elapsedOf, type PlanRun } from "./plan/PlanTimer";
-import { loadPlan, monthIndex, savePlan, PLAN_KEY, type Block, type PlanConfig } from "./plan/plan";
+import { loadPlan, monthIndex, savePlan, PLAN_KEY, type Block, type PlanConfig } from "./plan/calendar";
 import { monthOf } from "./plan/curriculum";
 import { findSong } from "./plan/gates";
 import { generate, sightXml, SIGHT_COMPOSER } from "./sightreading/generate";

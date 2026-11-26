@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "../ui/Icon";
 import { dayKey } from "../progress/summary";
-import { blockDone, markBlockDone, type Block } from "./plan";
+import { blockDone, markBlockDone, type Block } from "./calendar";
 
 export interface PlanRun {
   blocks: Block[];

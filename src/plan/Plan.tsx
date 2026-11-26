@@ -21,7 +21,7 @@ import {
   sessionFor,
   type Block,
   type PlanConfig,
-} from "./plan";
+} from "./calendar";
 import { dayKey } from "../progress/summary";
 
 /** Exercício completo a partir do que o mês define. */

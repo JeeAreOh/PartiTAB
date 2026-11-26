@@ -8,7 +8,7 @@ import {
   monthIndex,
   repeatMonth,
   sessionFor,
-} from "./plan";
+} from "./calendar";
 
 const at = (y: number, m: number, d: number, h = 12) => new Date(y, m - 1, d, h).getTime();
 
