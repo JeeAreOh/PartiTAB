@@ -21,7 +21,7 @@
 
 ![A partitura de Für Elise no modo Esperar, com o teclado virtual embaixo](docs/media/partitura.png)
 
-O PartiTAB mostra a partitura, toca a música e acompanha o que você toca num teclado ligado ao computador por USB. No modo **Esperar**, o cursor só anda quando você acerta as notas; no **Tocar junto**, a música segue no andamento e cada nota é avaliada (no tempo, adiantada, atrasada, errada). Abre arquivos **Guitar Pro, MusicXML e MIDI**, transforma tabs de banda em arranjos de piano por nível e tem exercícios de técnica, treino de leitura e acompanhamento do progresso.
+O PartiTAB mostra a partitura, toca a música e acompanha o que você toca num teclado ligado ao computador por USB. No modo **Esperar**, o cursor só anda quando você acerta as notas; no **Tocar junto**, a música segue no andamento e cada nota é avaliada (no tempo, adiantada, atrasada, errada). Abre arquivos **Guitar Pro, MusicXML e MIDI**, transforma tabs de banda em arranjos de piano por nível e tem um plano de estudo de 12 meses, exercícios de técnica, leitura à primeira vista, treino de ritmo e acompanhamento do progresso.
 
 Foi feito com o Yamaha PSR-E463 e deve funcionar com qualquer teclado ou piano digital que tenha **USB-MIDI**.
 
@@ -46,9 +46,10 @@ Foi feito com o Yamaha PSR-E463 e deve funcionar com qualquer teclado ou piano d
 
 **Estudo**
 
-- **Técnica:** escalas, arpejos e cadências nas 24 tonalidades, com o dedilhado tradicional escrito.
-- **Leitura:** cartões com notas na pauta (clave de sol e de fá), com repetição espaçada nas notas que você mais erra.
-- **Progresso:** minutos por dia, meta diária, dias seguidos de prática e as músicas que mais evoluíram.
+- **Plano de 12 meses:** sessão diária em 5 blocos com cronômetro, cada bloco abre a tela certa já configurada, e metas por trimestre medidas pelo app.
+- **Técnica:** cinco dedos, escalas, arpejos e cadências nas 24 tonalidades, com o dedilhado tradicional escrito e o andamento limpo de cada exercício.
+- **Leitura:** cartões de notas, intervalos e tríades com repetição espaçada, teste das 20 notas cronometrado, **primeira vista** com trechos novos a cada vez (7 níveis) e treino de ritmo.
+- **Progresso:** minutos por dia, meta diária, dias seguidos, as músicas que mais evoluíram e as metas do plano.
 
 **Som e teclado**
 

@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, type Attempt, type Song, type StudySession } from "../api";
+import {
+  api,
+  type Attempt,
+  type ReadingTestResult,
+  type SightReadingResult,
+  type Song,
+  type StudySession,
+} from "../api";
+import { planMetrics, type Metric } from "../plan/gates";
 import { Cover } from "../library/Cover";
 import { formatMinutes, summarize, type DayTotal } from "./summary";
 
@@ -28,6 +36,9 @@ interface Props {
 export function Progress({ songs, version, onOpenSong }: Props) {
   const [attempts, setAttempts] = useState<Attempt[] | null>(null);
   const [study, setStudy] = useState<StudySession[]>([]);
+  const [tests, setTests] = useState<ReadingTestResult[]>([]);
+  const [sight, setSight] = useState<SightReadingResult[]>([]);
+  const [allAttempts, setAllAttempts] = useState<Attempt[]>([]);
   const [goal, setGoal] = useState(readGoal);
   const [error, setError] = useState<string | null>(null);
 
@@ -35,11 +46,25 @@ export function Progress({ songs, version, onOpenSong }: Props) {
     const since = Date.now() - HISTORY_DAYS * 86_400_000;
     api.library.allAttempts(since).then(setAttempts, (e) => setError(String(e)));
     api.study.list(since).then(setStudy, () => setStudy([]));
+    api.reading.tests(0).then(setTests, () => setTests([]));
+    api.sight.list(0).then(setSight, () => setSight([]));
+    api.library.allAttempts(0).then(setAllAttempts, () => setAllAttempts([]));
   }, [version]);
 
   const summary = useMemo(
     () => (attempts ? summarize(attempts, songs, Date.now(), 30, study) : null),
     [attempts, songs, study],
+  );
+
+  const metrics = useMemo(
+    () =>
+      summary
+        ? planMetrics(
+            { tests, sight, attempts: allAttempts, songs },
+            summary.days.map((d) => Math.round(d.minutes)),
+          )
+        : [],
+    [summary, tests, sight, allAttempts, songs],
   );
 
   const changeGoal = (value: number) => {
@@ -134,6 +159,15 @@ export function Progress({ songs, version, onOpenSong }: Props) {
       </section>
 
       <section className="progress-card">
+        <h3>Metas do plano</h3>
+        <div className="metric-tiles">
+          {metrics.map((m) => (
+            <MetricTile key={m.id} metric={m} />
+          ))}
+        </div>
+      </section>
+
+      <section className="progress-card">
         <h3>Mais evoluíram (30 dias)</h3>
         {summary.improved.length === 0 ? (
           <p className="muted">
@@ -173,6 +207,47 @@ export function Progress({ songs, version, onOpenSong }: Props) {
           : ""}
         . Práticas gravadas antes da versão 0.2.0 entram na sequência, mas sem minutos.
       </p>
+    </div>
+  );
+}
+
+/** Métrica do plano com a linha de tendência. */
+function MetricTile({ metric }: { metric: Metric }) {
+  const pts = metric.series.slice(-30);
+  const W = 120;
+  const H = 32;
+  const min = Math.min(...pts);
+  const max = Math.max(...pts);
+  const span = max - min || 1;
+  const path = pts
+    .map((v, i) => {
+      const x = pts.length > 1 ? (i / (pts.length - 1)) * W : W / 2;
+      const y = H - 3 - ((v - min) / span) * (H - 6);
+      return `${i ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join("");
+  const first = pts[0];
+  const last = pts[pts.length - 1];
+  const better = pts.length > 1 && (metric.lowerIsBetter ? last < first : last > first) ? "up" : "";
+  return (
+    <div className="metric-tile">
+      <span className="label">{metric.label}</span>
+      <b>{metric.value}</b>
+      {pts.length > 1 ? (
+        <svg
+          className={`sparkline ${better}`}
+          viewBox={`0 0 ${W} ${H}`}
+          width="100%"
+          height={H}
+          preserveAspectRatio="none"
+          role="img"
+          aria-label={`Tendência: ${metric.label}`}
+        >
+          <path d={path} />
+        </svg>
+      ) : (
+        <span className="muted small">sem dados suficientes</span>
+      )}
     </div>
   );
 }

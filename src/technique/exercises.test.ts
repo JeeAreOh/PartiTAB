@@ -134,3 +134,14 @@ describe("exercícios de técnica", () => {
     expect(name(spelling(-2, false)[6])).toBe("Gb");
   });
 });
+
+describe("posição de cinco dedos", () => {
+  it("sobe e desce da tônica à quinta, um dedo por tecla", () => {
+    const ex = { ...base, kind: "position" as const, hands: "both" as const };
+    expect(exerciseTitle(ex)).toBe("Posição de Dó maior (mãos juntas)");
+    const xml = exerciseXml(ex);
+    const fingers = [...xml.matchAll(/<fingering>(\d)<\/fingering>/g)].map((m) => m[1]).join("");
+    // Por compasso: as 8 colcheias da direita, as 8 da esquerda, e a última nota de cada.
+    expect(fingers).toBe("12345432" + "54321234" + "1" + "5");
+  });
+});

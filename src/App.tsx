@@ -1,5 +1,10 @@
 import { getOctaveNaming } from "./octave";
 import { inLibrary } from "./library/filter";
+import { Plan, fullExercise } from "./plan/Plan";
+import { PlanTimer, elapsedOf, type PlanRun } from "./plan/PlanTimer";
+import { loadPlan, monthIndex, savePlan, PLAN_KEY, type Block, type PlanConfig } from "./plan/plan";
+import { monthOf } from "./plan/curriculum";
+import { findSong } from "./plan/gates";
 import { generate, sightXml, SIGHT_COMPOSER } from "./sightreading/generate";
 import { judgeRun, suggestLevel } from "./sightreading/progress";
 import { generateRhythm, rhythmXml, RHYTHM_STYLE } from "./rhythm/generate";
@@ -161,6 +166,11 @@ function App() {
   // Trecho de treino em andamento (primeira vista): estudo, execução única e resultado.
   const [training, setTraining] = useState<Training | null>(null);
   const trainingKind = training?.kind ?? null;
+  // Plano de estudo: configuração e o bloco em andamento no cronômetro.
+  const [planConfig, setPlanConfigState] = useState<PlanConfig | null>(loadPlan);
+  const [planRun, setPlanRun] = useState<PlanRun | null>(null);
+  /** Muda para a aba recarregar as preferências gravadas pelo plano. */
+  const [tabKey, setTabKey] = useState(0);
   // Muda ao trocar a convenção das oitavas, para redesenhar os nomes das notas.
   const [, setOctaveNaming] = useState(getOctaveNaming);
   // F1 abre a ajuda de qualquer tela.
@@ -175,7 +185,7 @@ function App() {
   }, []);
   const [currentId, setCurrentId] = useState<number | null>(null);
   const [view, setView] = useState<
-    "library" | "score" | "reading" | "technique" | "progress" | "search"
+    "library" | "plan" | "score" | "reading" | "technique" | "progress" | "search"
   >("score");
   /** Muda a cada prática gravada (o painel de progresso recarrega). */
   const [practiceVersion, setPracticeVersion] = useState(0);
@@ -663,6 +673,102 @@ function App() {
     if (training && currentId !== training.songId) leaveTraining();
   }, [currentId, training, leaveTraining]);
 
+  // ------------------------------------------------------- plano de estudo
+
+  const setPlanConfig = (config: PlanConfig | null) => {
+    setPlanConfigState(config);
+    if (config) savePlan(config);
+    else storage.set(PLAN_KEY, null);
+  };
+
+  const planMonth = planConfig
+    ? monthOf(Math.max(1, Math.min(12, monthIndex(planConfig, Date.now()))))
+    : null;
+
+  /** Grava preferências de uma aba (ela as lê ao abrir) e abre a aba. */
+  const openTabWith = (v: typeof view, prefs: Record<string, unknown>) => {
+    for (const [key, value] of Object.entries(prefs)) {
+      try {
+        const current = JSON.parse(localStorage.getItem(key) ?? "null");
+        const next =
+          value && typeof value === "object" && current && typeof current === "object"
+            ? { ...current, ...value }
+            : value;
+        localStorage.setItem(key, typeof next === "string" ? next : JSON.stringify(next));
+      } catch {
+        /* sem armazenamento: a aba abre como estava */
+      }
+    }
+    setTabKey((k) => k + 1);
+    setView(v);
+  };
+
+  /** Abre o que o bloco pede, já configurado. */
+  const openBlock = (block: Block) => {
+    const month = planMonth;
+    if (!month) return;
+    switch (block.id) {
+      case "technique":
+        if (month.technique.length) practiceExercise(fullExercise(month.technique[0]));
+        else setView("technique");
+        break;
+      case "reading":
+        openTabWith("reading", {
+          "partitab.reading": {
+            clefs: month.reading.clefs,
+            range: month.reading.range,
+            accidentals: false,
+            ...(month.reading.patterns ? { patternKind: month.reading.patterns } : {}),
+          },
+          "partitab.readingMode": month.reading.patterns ? "patterns" : "training",
+        });
+        break;
+      case "repertoire": {
+        const candidates = month.repertoire
+          .map((r) => (r.match.length ? findSong(librarySongs, r.match) : null))
+          .filter((s): s is Song => !!s);
+        const recent = [...librarySongs]
+          .filter((s) => s.lastPlayedAt && s.artist !== TECHNIQUE_ARTIST)
+          .sort((a, b) => (b.lastPlayedAt ?? 0) - (a.lastPlayedAt ?? 0));
+        const song =
+          [...candidates].sort((a, b) => (b.lastPlayedAt ?? 0) - (a.lastPlayedAt ?? 0))[0] ??
+          recent[0];
+        if (song) run(() => openSong(song));
+        else {
+          setView("library");
+          setNotice("Escolha uma música da biblioteca para o repertório.");
+        }
+        if (block.label.startsWith("Revisão"))
+          setNotice("Sábado: toque o repertório do mês e grave uma execução (botão vermelho).");
+        break;
+      }
+      case "theory":
+        startTraining("rhythm", month.rhythmLevel);
+        break;
+      case "free":
+        openTabWith("library", {
+          "partitab.libraryFilters": { status: "favorites", query: "" },
+        });
+        break;
+    }
+  };
+
+  const startBlock = (block: Block, blocks: Block[]) => {
+    const index = blocks.findIndex((b) => b.id === block.id);
+    if (!planRun || planRun.blocks[planRun.index]?.id !== block.id) {
+      setPlanRun({ blocks, index, startedAt: Date.now(), accumulated: 0, paused: false });
+    }
+    openBlock(block);
+  };
+
+  const nextBlock = () => {
+    if (!planRun) return;
+    const index = planRun.index + 1;
+    if (index >= planRun.blocks.length) return setPlanRun(null);
+    setPlanRun({ ...planRun, index, startedAt: Date.now(), accumulated: 0, paused: false });
+    openBlock(planRun.blocks[index]);
+  };
+
   // ------------------------------------------------------------- arranjo
 
   const savePrefs = (patch: SongPrefs) => {
@@ -1002,6 +1108,7 @@ function App() {
           {(
             [
               ["library", "library", "Biblioteca"],
+              ["plan", "plan", "Plano"],
               ["score", "score", "Partitura"],
               ["reading", "reading", "Leitura"],
               ["technique", "technique", "Técnica"],
@@ -1087,6 +1194,49 @@ function App() {
           </button>
         </div>
       </header>
+
+      {planRun && planMonth && (
+        <PlanTimer
+          run={planRun}
+          actions={
+            planRun.blocks[planRun.index].id === "reading"
+              ? [
+                  {
+                    label: `Primeira vista (nível ${planMonth.sightLevel})`,
+                    onClick: () => startSight(planMonth.sightLevel),
+                  },
+                ]
+              : planRun.blocks[planRun.index].id === "theory"
+                ? [
+                    {
+                      label: `Nova linha de ritmo (nível ${planMonth.rhythmLevel})`,
+                      onClick: () => startTraining("rhythm", planMonth.rhythmLevel),
+                    },
+                  ]
+                : planRun.blocks[planRun.index].id === "technique" && planMonth.technique.length > 1
+                  ? planMonth.technique.slice(1).map((t) => ({
+                      label: exerciseTitle(fullExercise(t)),
+                      onClick: () => practiceExercise(fullExercise(t)),
+                    }))
+                  : []
+          }
+          notes={
+            planRun.blocks[planRun.index].id === "theory"
+              ? planMonth.theory.map((t) => `Teoria: ${t}`)
+              : []
+          }
+          onPause={() =>
+            setPlanRun((r) =>
+              r ? { ...r, accumulated: elapsedOf(r, Date.now()), paused: true } : r,
+            )
+          }
+          onResume={() =>
+            setPlanRun((r) => (r ? { ...r, startedAt: Date.now(), paused: false } : r))
+          }
+          onNext={nextBlock}
+          onStop={() => setPlanRun(null)}
+        />
+      )}
 
       {view === "score" && state.tracks.length > 0 && (
         <>
@@ -1825,6 +1975,7 @@ function App() {
         {view === "library" && (
           <div className="layer">
             <Library
+              key={tabKey}
               songs={librarySongs}
               currentId={currentId}
               busy={busy}
@@ -1845,9 +1996,24 @@ function App() {
           </div>
         )}
 
+        {view === "plan" && (
+          <div className="layer">
+            <Plan
+              config={planConfig}
+              onConfig={setPlanConfig}
+              songs={library.songs}
+              version={practiceVersion}
+              busy={busy}
+              activeBlock={planRun ? planRun.blocks[planRun.index].id : null}
+              onBlock={startBlock}
+            />
+          </div>
+        )}
+
         {view === "reading" && (
           <div className="layer">
             <ReadingTrainer
+              key={tabKey}
               registerNoteHandler={registerReading}
               onError={setError}
               onStudySaved={() => setPracticeVersion((v) => v + 1)}
@@ -1855,6 +2021,8 @@ function App() {
               onStartRhythm={(level) => startTraining("rhythm", level)}
               version={practiceVersion}
               busy={busy}
+              planSightLevel={planMonth?.sightLevel ?? null}
+              planRhythmLevel={planMonth?.rhythmLevel ?? null}
             />
           </div>
         )}

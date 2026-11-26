@@ -2941,3 +2941,234 @@ table.attempts {
   font-weight: 600;
   fill: currentColor;
 }
+
+/* --------------------------------------------------------------- plano */
+
+.plan-setup {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 560px;
+}
+
+.plan-blocks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.plan-blocks li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.plan-blocks li.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.plan-blocks li.done .plan-block-text b {
+  color: var(--muted);
+}
+
+.plan-check {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1.5px solid var(--border);
+  color: var(--ok);
+  font-weight: 700;
+}
+
+.plan-blocks li.done .plan-check {
+  border-color: var(--ok);
+}
+
+.plan-block-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.plan-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+}
+
+.plan-sub {
+  margin: 12px 0 4px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.plan-list {
+  margin: 0;
+  padding-left: 18px;
+  line-height: 1.6;
+}
+
+.gates {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.gate {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.gate.current {
+  border-color: var(--accent);
+}
+
+.gate h4 {
+  margin: 0 0 6px;
+  font-size: 14px;
+}
+
+.gate ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.gate li {
+  display: flex;
+  gap: 8px;
+}
+
+.gate li.met > span:first-child {
+  color: var(--ok);
+}
+
+.gate-ok {
+  margin-left: 6px;
+  font-size: 12px;
+  color: var(--ok);
+}
+
+.gate-action {
+  margin: 8px 0 0;
+}
+
+.plan-timer {
+  align-self: center;
+  margin: 0 16px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  width: min(900px, calc(100% - 32px));
+  padding: 6px 10px 6px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.plan-timer.over {
+  border-color: var(--ok);
+}
+
+.plan-timer-main {
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: center;
+  gap: 2px 12px;
+}
+
+.plan-timer-clock {
+  font-size: 18px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.plan-timer-bar {
+  grid-column: 1 / -1;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.plan-timer-bar span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+.plan-timer-extra {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.plan-timer-extra ul {
+  margin: 0;
+  padding-left: 16px;
+  color: var(--muted);
+}
+
+.plan-timer-buttons {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.metric-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.metric-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.metric-tile .label {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.metric-tile b {
+  font-size: 18px;
+}
+
+.sparkline path {
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+
+.sparkline.up path {
+  stroke: var(--accent);
+}

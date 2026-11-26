@@ -2,6 +2,13 @@
 
 As versões e os instaladores ficam na [página de versões](https://github.com/JeeAreOh/PartiTAB/releases).
 
+## 0.8.0 — 26/11/2026
+
+- **Aba Plano**: o plano de estudo de 12 meses, com a sessão do dia em 5 blocos, cronômetro por bloco que abre cada aba já configurada, sábado de revisão e domingo de descanso.
+- **Metas dos trimestres** medidas pelo app (teste das 20 notas, primeira vista, andamento das escalas, peças prontas), com sugestão de avançar ou repetir o mês.
+- Card **Metas do plano** no Progresso, com as cinco métricas e a tendência de cada uma.
+- Técnica: exercício de **cinco dedos** (posição fixa).
+
 ## 0.7.0 — 26/11/2026
 
 - **Intervalos e tríades** na aba Leitura: cartões de intervalos (2ª a 8ª, melódicos e harmônicos) e de tríades maiores e menores com inversões, tocados no teclado, com repetição espaçada.

@@ -9,7 +9,7 @@
 
 import { DIVISIONS, writeMusicXml, type XmlNote } from "../midi/musicxml";
 
-export type Kind = "scale" | "arpeggio" | "cadence";
+export type Kind = "position" | "scale" | "arpeggio" | "cadence";
 export type Mode = "major" | "harmonic" | "natural";
 export type Hands = "right" | "left" | "both";
 export type Figure = 4 | 8 | 16; // semínima, colcheia, semicolcheia
@@ -152,6 +152,12 @@ const upDown = <T,>(list: T[]) => [...list, ...list.slice(0, -1).reverse()];
 function handNotes(ex: Exercise, hand: "right" | "left", octave: number) {
   const base = 12 * (octave + 1) + ex.tonic;
   const info = (ex.mode === "major" ? MAJOR : MINOR)[ex.tonic];
+  if (ex.kind === "position") {
+    // Posição de cinco dedos: um dedo por tecla, da tônica à quinta.
+    const steps = ex.mode === "major" ? [0, 2, 4, 5, 7] : [0, 2, 3, 5, 7];
+    const fingers = hand === "right" ? [1, 2, 3, 4, 5] : [5, 4, 3, 2, 1];
+    return { keys: upDown(steps.map((st) => base + st)), fingers: upDown(fingers) };
+  }
   if (ex.kind === "scale") {
     const up = ascending(base, STEPS[ex.mode], ex.octaves);
     const fingers = scaleFingers(
@@ -191,14 +197,19 @@ function cadence(ex: Exercise) {
 
 export function exerciseTitle(ex: Exercise) {
   const what =
-    ex.kind === "scale"
+    ex.kind === "position"
+      ? `Posição de ${keyName(ex.tonic, ex.mode)}`
+      : ex.kind === "scale"
       ? `Escala de ${keyName(ex.tonic, ex.mode)}${ex.mode === "harmonic" ? " harmônica" : ex.mode === "natural" ? " natural" : ""}`
       : ex.kind === "arpeggio"
         ? `Arpejo de ${keyName(ex.tonic, ex.mode)}`
         : `Cadência em ${keyName(ex.tonic, ex.mode)}`;
   const hands =
     ex.hands === "both" ? "mãos juntas" : ex.hands === "right" ? "mão direita" : "mão esquerda";
-  const octaves = ex.kind === "cadence" ? "" : `, ${ex.octaves} oitava${ex.octaves > 1 ? "s" : ""}`;
+  const octaves =
+    ex.kind === "cadence" || ex.kind === "position"
+      ? ""
+      : `, ${ex.octaves} oitava${ex.octaves > 1 ? "s" : ""}`;
   return `${what} (${hands}${octaves})`;
 }
 
@@ -229,7 +240,7 @@ export function exerciseXml(ex: Exercise): string {
     const len = (4 * DIVISIONS) / ex.figure;
     for (const hand of hands) {
       // Direita a partir do dó central; esquerda uma oitava abaixo (duas, em 2 oitavas).
-      const octave = hand === "right" ? 4 : ex.octaves === 2 ? 2 : 3;
+      const octave = hand === "right" ? 4 : ex.octaves === 2 && ex.kind !== "position" ? 2 : 3;
       const { keys, fingers } = handNotes(ex, hand, octave);
       keys.forEach((key, i) => {
         const start = i * len;

@@ -104,6 +104,12 @@ const PATHS = {
     </>
   ),
   technique: <path d="M3 20h5v-4h4v-4h4V8h5" />,
+  plan: (
+    <>
+      <rect x="3.5" y="5" width="17" height="15" rx="2.5" />
+      <path d="M3.5 10h17M8 3v4M16 3v4M8 14h3M8 17h6" />
+    </>
+  ),
   help: (
     <>
       <circle cx="12" cy="12" r="9" />

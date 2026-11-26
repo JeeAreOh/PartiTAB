@@ -680,6 +680,63 @@ export const HELP_TOPICS: HelpTopic[] = [
 
   // ------------------------------------------------------------ estudo
   {
+    id: "plano",
+    group: "Estudo",
+    title: "Plano de estudo de 12 meses",
+    keywords: "plano estudo 12 meses sessão diária blocos cronômetro meta gate trimestre fase calendário repetir avançar",
+    body: (
+      <>
+        <p>
+          A aba <b>Plano</b> transforma um plano de 12 meses de teclado e leitura em sessões
+          diárias. Escolha a data de início e os minutos por dia (padrão: 40). O plano tem 4
+          fases de 3 meses: Fundamentos, Mãos juntas, Leitura por padrões, Repertório e
+          autonomia.
+        </p>
+        <p>
+          <b>Sessão de hoje:</b> 5 blocos (técnica 5 min, leitura 10, repertório 15, teoria e
+          ritmo 5, livre 5, proporcionais à sua meta). <b>Começar</b> abre a aba certa já
+          configurada para o mês e liga um cronômetro no alto da tela, que fica visível em
+          qualquer aba:
+        </p>
+        <ul>
+          <li>
+            <b>Técnica</b>: o primeiro exercício do mês (os outros ficam como atalhos no
+            cronômetro).
+          </li>
+          <li>
+            <b>Leitura</b>: os cartões do mês e, no cronômetro, o botão da primeira vista no
+            nível do mês.
+          </li>
+          <li>
+            <b>Repertório</b>: a peça do mês que você praticou por último (ou a última música
+            praticada).
+          </li>
+          <li>
+            <b>Teoria e ritmo</b>: uma linha de ritmo no nível do mês, com os tópicos de teoria
+            no cronômetro.
+          </li>
+          <li>
+            <b>Livre</b>: a Biblioteca filtrada pelas favoritas.
+          </li>
+        </ul>
+        <p>
+          No fim do tempo do bloco, o app toca um aviso curto e oferece o próximo. O bloco conta
+          como feito com 80% do tempo. No sábado a sessão vira <b>revisão e gravação</b>; no
+          domingo, descanso (só cartões, se quiser).
+        </p>
+        <p>
+          <b>Metas dos trimestres:</b> ao fim dos meses 3, 6, 9 e 12, critérios medidos sozinhos
+          pelo app: tempo do teste das 20 notas, nível aprovado na primeira vista, andamento
+          limpo das escalas e peças prontas (nota 90 ou mais em Tocar junto, a 100%, nas
+          últimas 3 vezes). Cada critério mostra ✓ ou o valor atual. Com a meta cumprida, o app
+          sugere avançar; sem ela, na última semana do trimestre, sugere repetir o mês (o
+          calendário anda um mês). Nada muda sem você confirmar. O card <b>Metas do plano</b>{" "}
+          no Progresso mostra as cinco métricas com a tendência.
+        </p>
+      </>
+    ),
+  },
+  {
     id: "tecnica",
     group: "Estudo",
     title: "Técnica: escalas, arpejos e cadências",
@@ -689,8 +746,8 @@ export const HELP_TOPICS: HelpTopic[] = [
         <p>Na aba <b>Técnica</b>, monte o exercício:</p>
         <ul>
           <li>
-            <b>Exercício</b>: Escala, Arpejo ou Cadência (I–IV–V–I, acordes na direita e baixo na
-            esquerda).
+            <b>Exercício</b>: Cinco dedos (posição fixa, da tônica à quinta, um dedo por tecla),
+            Escala, Arpejo ou Cadência (I–IV–V–I, acordes na direita e baixo na esquerda).
           </li>
           <li>
             <b>Tonalidade</b>: Maior, Menor harmônica ou Menor natural, nas 12 tônicas.

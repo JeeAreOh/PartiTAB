@@ -25,7 +25,7 @@ cd src-tauri && cargo test                # Rust
 cd src-tauri && cargo clippy --all-targets
 ```
 
-Os testes de TypeScript cobrem o motor de prática, o redutor para piano, a conversão de MIDI, os exercícios de técnica, o dedilhado, a leitura e os filtros da biblioteca. Os de Rust cobrem a tradução das mensagens MIDI, a biblioteca (SQLite), o backup, a busca e o verificador de versão. O workflow de release roda todos antes de gerar o instalador.
+Os testes de TypeScript cobrem o motor de prática, o redutor para piano, a conversão de MIDI, os exercícios de técnica, o dedilhado, a leitura, a primeira vista (200 sementes por nível), o ritmo, o plano e os filtros da biblioteca. Os de Rust cobrem a tradução das mensagens MIDI, a biblioteca (SQLite), o backup, a busca e o verificador de versão. O workflow de release roda todos antes de gerar o instalador.
 
 ## Arquitetura
 
@@ -49,16 +49,20 @@ src/
   help/                Ajuda (topics.tsx: o texto de cada tópico)
   library/             biblioteca (filtros, detalhes, capas, backup)
   midi/                MIDI → MusicXML (faixas, mãos, tercinas, swing); musicxml.ts escreve o MusicXML
+  plan/                aba Plano: currículo de 12 meses, calendário, sessão do dia, gates e métricas
   practice/            motor de prática, linha do tempo, trechos e rampa, mapa de erros,
                        calibração, gravação, dedilhado, notas caindo, seções, som pelo teclado
   progress/            painel de progresso
-  reading/             treino de leitura (cartões, repetição espaçada, pauta em SVG)
+  reading/             treino de leitura (cartões de notas, teste das 20 notas, intervalos e tríades)
   reducer/             arranjo para piano (níveis 1 a 3, tonalidade, acordes)
+  rhythm/              treino de ritmo (linhas de 4 compassos, desvio médio)
   search/              aba de busca
+  sightreading/        primeira vista: níveis, padrões rítmicos, melodia, mão esquerda e gerador
   sound/               timbre, ajustes de som e catálogo de SoundFonts
   technique/           aba Técnica: escalas, arpejos e cadências com dedilhado
   ui/                  ícones, popover, tela cheia, tema
   updates/             verificação e instalação de versões
+  util/                gerador pseudoaleatório com semente (mulberry32)
   video/               sincronia com vídeos do YouTube
 src-tauri/src/
   lib.rs               estado do app e comandos Tauri

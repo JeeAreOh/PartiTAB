@@ -39,6 +39,7 @@ function readExercise(): Exercise {
 }
 
 const KINDS: [Kind, string][] = [
+  ["position", "Cinco dedos"],
   ["scale", "Escala"],
   ["arpeggio", "Arpejo"],
   ["cadence", "Cadência"],
@@ -56,6 +57,10 @@ const FIGURES: [Figure, string][] = [
 
 /** Sugestão de estudo: um caminho do mais fácil ao mais difícil. */
 const PATH: { label: string; ex: Partial<Exercise> }[] = [
+  {
+    label: "Posição de Dó, mão direita",
+    ex: { kind: "position", tonic: 0, mode: "major", hands: "right", figure: 4 },
+  },
   {
     label: "Dó maior, mão direita",
     ex: { kind: "scale", tonic: 0, mode: "major", hands: "right" },
@@ -191,7 +196,7 @@ export function Technique({ songs, busy, version, onPractice, onOpenSong }: Prop
 
         {ex.kind !== "cadence" && (
           <>
-            <div className="field">
+            <div className="field" hidden={ex.kind === "position"}>
               <span className="label">Extensão</span>
               <Segmented
                 options={[
